@@ -81,6 +81,8 @@
 #include "getopt_long.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "rust_interface.h"
+
 
 
 /* Ideally this would be in a .h file, but it hardly seems worth the trouble */
@@ -3145,6 +3147,7 @@ main(int argc, char *argv[])
 	PQExpBuffer start_db_cmd;
 	char		pg_ctl_path[MAXPGPATH];
 
+	hello_from_rust();
 	/*
 	 * Ensure that buffering behavior of stdout matches what it is in
 	 * interactive usage (at least on most platforms).  This prevents
