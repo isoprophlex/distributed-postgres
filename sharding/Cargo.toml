@@ -9,4 +9,5 @@ edition = "2021"
 libc = "0.2"
 
 [lib]
-crate-type = ["cdylib"]
+name = "sharding"
+crate-type = ["dylib"]
