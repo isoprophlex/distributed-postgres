@@ -1,9 +1,9 @@
 #include <stdio.h>
 
-extern void rust_function();
+extern int rust_function(int number);
 
 int main() {
-    rust_function();
-    printf("Called Rust function");
-    return 0;
+    int response = rust_function(32);
+    printf("Called Rust function, returned: %d\n", response);
+    return 15;
 }
