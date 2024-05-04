@@ -35,7 +35,7 @@ OBJS = \
 	findtimezone.o \
 	initdb.o \
 	localtime.o \
-	rust_interface.o
+	libsharding.a
 
 all: initdb
 
