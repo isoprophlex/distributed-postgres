@@ -3089,6 +3089,21 @@ initialize_data_directory(void)
 	check_ok();
 }
 
+// Aldo
+typedef void (*rust_callback)(void*, int32_t);
+void* cb_target;
+rust_callback cb;
+
+int32_t register_callback(void* callback_target, rust_callback callback) {
+    cb_target = callback_target;
+    cb = callback;
+    return 1;
+}
+
+void trigger_callback() {
+  cb(cb_target, 7); // Will call callback(&rustObject, 7) in Rust.
+}
+// Fin Aldo
 
 int
 main(int argc, char *argv[])
@@ -3145,7 +3160,9 @@ main(int argc, char *argv[])
 	PQExpBuffer start_db_cmd;
 	char		pg_ctl_path[MAXPGPATH];
 
-	rust_function(50);
+	int response = rust_function(50);
+	printf("Response from Rust: %d\n", response);
+
 	/*
 	 * Ensure that buffering behavior of stdout matches what it is in
 	 * interactive usage (at least on most platforms).  This prevents
@@ -3491,3 +3508,4 @@ main(int argc, char *argv[])
 	success = true;
 	return 0;
 }
+
