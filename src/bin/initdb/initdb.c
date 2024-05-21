@@ -3161,6 +3161,7 @@ main(int argc, char *argv[])
 	char		pg_ctl_path[MAXPGPATH];
 
 	int response = rust_function(50);
+    printf("Hello\n");
 	printf("Response from Rust: %d\n", response);
 
 	/*

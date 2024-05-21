@@ -70,7 +70,7 @@ MainLoop(FILE *source)
 	scan_state = psql_scan_create(&psqlscan_callbacks);
 	cond_stack = conditional_stack_create();
 	psql_scan_set_passthrough(scan_state, (void *) cond_stack);
-
+    printf("Welcome to distributed postgreSQL!\n");
 	query_buf = createPQExpBuffer();
 	previous_buf = createPQExpBuffer();
 	history_buf = createPQExpBuffer();
