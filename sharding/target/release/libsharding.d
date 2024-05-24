@@ -1,1 +1,1 @@
-/Users/ncontinanza/Projects/distributed-postgres/sharding/target/release/libsharding.a: /Users/ncontinanza/Projects/distributed-postgres/sharding/src/lib.rs
+/Users/ncontinanza/Projects/distributed-postgres/sharding/target/release/libsharding.a: /Users/ncontinanza/Projects/distributed-postgres/sharding/src/bindings.rs /Users/ncontinanza/Projects/distributed-postgres/sharding/src/lib.rs
