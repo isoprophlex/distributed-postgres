@@ -2,7 +2,10 @@
 
 # Define paths
 ROOT_DIR=$(pwd)
-SHARDING_DIR="$ROOT_DIR/sharding"
+# Print the current working directory and its contents
+echo "Current working directory: $ROOT_DIR"
+
+SHARDING_DIR="sharding"
 INITDB_DIR="$ROOT_DIR/src/bin/initdb"
 PG_CTL_DIR="$ROOT_DIR/src/bin/pg_ctl"
 POSTGRES_EXECUTABLE="$ROOT_DIR/src/backend/postgres"
@@ -14,11 +17,13 @@ cd $SHARDING_DIR
 cargo build --release --lib
 
 echo "Moving compiled library to initdb directory..."
+rm /app/src/bin/initdb/libsharding.a
 mv ./target/release/libsharding.a $INITDB_DIR
 
 echo "Building the project..."
-cd $ROOT_DIR
+cd ..
 ./configure --without-icu
+make clean
 make
 
 echo "Creating database directory..."
@@ -38,4 +43,4 @@ echo "Starting PostgreSQL server..."
 cd $PG_CTL_DIR
 ./pg_ctl -D $DB_DIR -l $LOG_FILE start
 
-echo "[DISTRIBUTED POSTGRESQL] Database initialized and server started successfully."
+echo "init-and-start-sv.sh finished"
