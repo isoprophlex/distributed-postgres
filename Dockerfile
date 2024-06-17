@@ -5,9 +5,11 @@ FROM --platform=$BUILDPLATFORM ubuntu:22.04
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y curl git build-essential libicu-dev flex bison libreadline-dev zlib1g-dev libpq-dev
 
-# Install rust
+# Install rust inside the container
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
+# Copy the files in the machine to the Docker image
+COPY ./ ./
 # Configure the PATH for Rust
 ENV PATH=/root/.cargo/bin:$PATH
 
@@ -28,9 +30,3 @@ USER pguser
 
 # Give execute permissions to the script
 RUN chmod +x ./init-and-start-sv.sh
-
-# Run the script
-RUN ./init-and-start-sv.sh
-
-# Configure the default command
-CMD ["./init-and-start-sv.sh"]
