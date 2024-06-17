@@ -81,7 +81,7 @@
 #include "getopt_long.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
-
+#include "rust_interface.h"
 
 /* Ideally this would be in a .h file, but it hardly seems worth the trouble */
 extern const char *select_default_timezone(const char *share_path);
@@ -3089,6 +3089,21 @@ initialize_data_directory(void)
 	check_ok();
 }
 
+// Aldo
+typedef void (*rust_callback)(void*, int32_t);
+void* cb_target;
+rust_callback cb;
+
+int32_t register_callback(void* callback_target, rust_callback callback) {
+    cb_target = callback_target;
+    cb = callback;
+    return 1;
+}
+
+void trigger_callback() {
+  cb(cb_target, 7); // Will call callback(&rustObject, 7) in Rust.
+}
+// Fin Aldo
 
 int
 main(int argc, char *argv[])
@@ -3144,6 +3159,10 @@ main(int argc, char *argv[])
 	char	   *effective_user;
 	PQExpBuffer start_db_cmd;
 	char		pg_ctl_path[MAXPGPATH];
+
+	int response = rust_function(50);
+    printf("Hello\n");
+	printf("Response from Rust: %d\n", response);
 
 	/*
 	 * Ensure that buffering behavior of stdout matches what it is in
@@ -3490,3 +3509,4 @@ main(int argc, char *argv[])
 	success = true;
 	return 0;
 }
+

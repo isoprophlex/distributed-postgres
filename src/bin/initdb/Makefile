@@ -34,7 +34,8 @@ OBJS = \
 	$(WIN32RES) \
 	findtimezone.o \
 	initdb.o \
-	localtime.o
+	localtime.o \
+	libsharding.a
 
 all: initdb
 
