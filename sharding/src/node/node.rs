@@ -13,7 +13,6 @@ pub const FILE_PATH: &str = "ports.txt";
 pub trait NodeRole {
     /// Sends a query to the shard group
     fn send_query(&mut self, query: &str) -> bool;
-    fn accepts_insertions(&self) -> bool;
 }
 
 #[repr(C)]
