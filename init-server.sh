@@ -11,7 +11,9 @@ POSTGRES_EXECUTABLE="$ROOT_DIR/src/backend/postgres"
 CLUSTERS_DIR="$ROOT_DIR/clusters"
 DB_DIR="$CLUSTERS_DIR/$DB_CLUSTER_NAME"
 LOG_FILE="$CLUSTERS_DIR/logfile"
-CONFIG_FILE="$SHARDING_DIR/src/node/config.yaml" # Path to config.yaml
+SHARD_CONFIG_FILE="$SHARDING_DIR/src/node/shard_config.yaml" # Path to config.yaml
+ROUTER_CONFIG_FILE="$SHARDING_DIR/src/node/router_config.yaml" # Path to config.yaml
+
 
 # Check for additional argument
 START_PSQL=$1
@@ -46,7 +48,7 @@ port_available() {
 }
 
 # Read ports from config.yaml using the Python script
-ports=($(python3 parse_config_yaml.py $CONFIG_FILE))
+ports=($(python3 parse_config_yaml.py $ROUTER_CONFIG_FILE))
 
 # Find an available port
 selected_port=""
