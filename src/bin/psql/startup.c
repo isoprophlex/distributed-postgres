@@ -136,6 +136,7 @@ main(int argc, char *argv[])
 	char	   *password = NULL;
 	bool		new_pass;
 	NodeType	nodeType;
+	char*       node_id;
 
 	pg_logging_init(argv[0]);
 	pg_logging_set_pre_callback(log_pre_callback);
@@ -165,12 +166,19 @@ main(int argc, char *argv[])
 				{
 					nodeType = Router;
 					printf("Node Type: router\n");
+					if (strcmp(argv[i+2],"-nodeId")==0) {
+                        node_id = argv[i+3];
+                    }
 				}
 				// If equals s or S (shard)
 				else if (strcmp(argv[i+1],"s")==0 || strcmp(argv[i+1],"S")==0)
 				{
 					nodeType = Shard;
+					node_id = argv[i+2];
 					printf("Node Type: shard\n");
+					if (strcmp(argv[i+2],"-nodeId") == 0) {
+                        node_id = argv[i+3];
+                    }
 				}
 				else
 				{
@@ -278,7 +286,7 @@ main(int argc, char *argv[])
 	/* loop until we have a password if requested by backend */
 	do
 	{
-#define PARAMS_ARRAY_SIZE	8
+#define PARAMS_ARRAY_SIZE	12
 		const char **keywords = pg_malloc_array(const char *, PARAMS_ARRAY_SIZE);
 		const char **values = pg_malloc_array(const char *, PARAMS_ARRAY_SIZE);
 
@@ -301,7 +309,7 @@ main(int argc, char *argv[])
 		values[7] = NULL;
 
 		// Creating the node instance
-		init_node_instance(nodeType, options.port);
+		init_node_instance(nodeType, options.port, node_id);
 
 		new_pass = false;
 		pset.db = PQconnectdbParams(keywords, values, true);
@@ -773,8 +781,8 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 				optind++;
 				continue;
 			}
-			pg_log_warning("extra command-line argument \"%s\" ignored",
-						   argv[optind]);
+/*			pg_log_warning("extra command-line argument \"%s\" ignored",
+						   argv[optind]);*/
 		}
 		optind++;
 	}

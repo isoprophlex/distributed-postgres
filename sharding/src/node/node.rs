@@ -52,7 +52,7 @@ pub fn get_node_instance() -> &'static mut dyn NodeRole {
 }
 
 #[no_mangle]
-pub extern "C" fn init_node_instance(node_type: NodeType, port: *const i8) {
+pub extern "C" fn init_node_instance(node_type: NodeType, port: *const i8, node_id: *const i8) {
     unsafe {
         if port.is_null() {
             panic!("Received a null pointer for port");
@@ -60,6 +60,13 @@ pub extern "C" fn init_node_instance(node_type: NodeType, port: *const i8) {
 
         let c_str = CStr::from_ptr(port);
         let node_port = match c_str.to_str() {
+            Ok(str) => str,
+            Err(_) => {
+                panic!("Received an invalid UTF-8 string");
+            }
+        };
+        let c_str_id = CStr::from_ptr(node_id);
+        let node_id = match c_str_id.to_str() {
             Ok(str) => str,
             Err(_) => {
                 panic!("Received an invalid UTF-8 string");
@@ -75,7 +82,7 @@ pub extern "C" fn init_node_instance(node_type: NodeType, port: *const i8) {
             }
             NodeType::Shard => {
                 println!("Sharding node initializing");
-                NODE_INSTANCE = Some(NodeInstance::new(Box::new(Shard::new(ip, node_port))));
+                NODE_INSTANCE = Some(NodeInstance::new(Box::new(Shard::new(ip, node_port, node_id))));
                 println!("Sharding node initializes");
             }
         }

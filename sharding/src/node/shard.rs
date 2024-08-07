@@ -27,7 +27,7 @@ pub struct Shard<'a> {
 
 impl<'a> Shard<'a> {
     /// Creates a new Shard node with the given port
-    pub fn new(ip: &'a str, port: &'a str) -> Self {
+    pub fn new(ip: &'a str, port: &'a str, node_id: &'a str) -> Self {
         println!("Creating a new Shard node with port: {}", port);
 
         // get username dynamically
@@ -37,6 +37,7 @@ impl<'a> Shard<'a> {
         };
         println!("Username found: {:?}", username);
         println!("Connecting to the database with port: {}", port);
+        println!("Node id: {:?}", node_id);
 
         let mut backend: Client = match Client::connect(
             format!(
