@@ -11,11 +11,14 @@ POSTGRES_EXECUTABLE="$ROOT_DIR/src/backend/postgres"
 CLUSTERS_DIR="$ROOT_DIR/clusters"
 DB_DIR="$CLUSTERS_DIR/$DB_CLUSTER_NAME"
 LOG_FILE="$CLUSTERS_DIR/logfile"
-CONFIG_FILE="$SHARDING_DIR/src/node/config.yaml" # Path to config.yaml
+SHARD_CONFIG_FILE="$SHARDING_DIR/src/node/shard_config.yaml" # Path to config.yaml
+ROUTER_CONFIG_FILE="$SHARDING_DIR/src/node/router_config.yaml" # Path to config.yaml
+
 
 # Check for additional argument
 START_PSQL=$1
 NODE_TYPE=$2
+NODE_ID=$3
 
 # If we're on OS X, make sure that globals aren't stripped out.
 if [ "$(uname)" == "Darwin" ]; then
@@ -46,7 +49,7 @@ port_available() {
 }
 
 # Read ports from config.yaml using the Python script
-ports=($(python3 parse_config_yaml.py $CONFIG_FILE))
+ports=($(python3 parse_config_yaml.py $ROUTER_CONFIG_FILE))
 
 # Find an available port
 selected_port=""
@@ -71,5 +74,5 @@ if [ "$START_PSQL" == "start" ]; then
     echo "[init-server] Calling start-psql.sh with nodeType "$NODE_TYPE" and port "$selected_port"..."
     # Pass the necessary argument to start-psql.sh
     cd $ROOT_DIR
-    ./start-psql.sh $selected_port $NODE_TYPE
+    ./start-psql.sh $selected_port $NODE_TYPE $NODE_ID
 fi
