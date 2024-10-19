@@ -27,11 +27,6 @@ LDFLAGS_INTERNAL += -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport)
 # Detect the operating system
 UNAME_S := $(shell uname -s)
 
-# Set macOS-specific flags
-ifeq ($(UNAME_S), Darwin)
-    LDFLAGS_MACOS = -framework IOKit -framework CoreFoundation -framework SystemConfiguration
-endif
-
 OBJS = \
 	$(WIN32RES) \
 	command.o \
@@ -55,7 +50,7 @@ OBJS = \
 all: psql
 
 psql: $(OBJS) | submake-libpq submake-libpgport submake-libpgfeutils
-	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) $(LDFLAGS_MACOS) -o $@$(X)
+	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 help.o: sql_help.h
 
