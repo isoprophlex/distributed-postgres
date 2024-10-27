@@ -121,6 +121,7 @@ fn new_node_instance(node_type: NodeType, ip: &str, port: &str, config_file_path
     );
     let nodes = get_nodes_config_raft(config_file_path);
 
+    // THIS IS BLOCKING THE MAIN THREAD
     // Run everything within Actix runtime
     System::new().block_on(async move {
         println!("Starting Raft module");
