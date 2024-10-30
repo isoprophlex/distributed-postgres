@@ -1,0 +1,25 @@
+ *** RUNNING DATE-TIME: 2024-10-30 05:59:40 UTC ***
+
+[2024-10-30 05:59:40 UTC] 
+>>> Node name: "node1", ip: 127.0.0.1, port: 5433
+
+[2024-10-30 05:59:40 UTC] Node node2 connected to Node node1
+
+[2024-10-30 05:59:40 UTC] 
+>>> Node name: "node2", ip: 127.0.0.1, port: 5434
+
+[2024-10-30 05:59:40 UTC] Is self.
+
+[2024-10-30 05:59:40 UTC] Running election timer
+
+[2024-10-30 05:59:40 UTC] [TIMER] ELECTION TIMER STARTED 1089, TERM: 0
+
+[2024-10-30 05:59:41 UTC] [START ELECTION] New current term: 1
+
+[2024-10-30 05:59:41 UTC] [ACTOR node1] Failed to send message: Broken pipe (os error 32)
+
+[2024-10-30 05:59:41 UTC] Node node2 is listening on 127.0.0.1:7434
+
+[2024-10-30 05:59:51 UTC] Connection accepted from Node: 127.0.0.1:53219
+
+[2024-10-30 06:00:38 UTC] Connection accepted from Node: 127.0.0.1:53233

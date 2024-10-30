@@ -9,6 +9,7 @@ build = "build.rs"
 [dependencies]
 libc = "0.2"
 tokio = { version = "1.38.0", features = ["rt", "rt-multi-thread", "full"] }
+async-std = { version = "1.10", features = ["tokio1"] }
 postgres = "0.19"
 core-foundation = "0.9.4"
 rust_decimal = {version = "1.35.0", features = ["db-postgres"]}
@@ -23,7 +24,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0.204"
 sysinfo = "0.30.13"
 indexmap = "2.5.0"
-actix = "0.13.5"
+actix = "0.12.0"
 actix-rt = "2.0"
 # raft = { git = "https://github.com/isoprophlex/raft", branch = "master" }
 raft = { path = "../../raft" }

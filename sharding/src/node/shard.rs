@@ -76,6 +76,10 @@ impl Shard {
     }
 
     pub fn accept_connections(shared_shard: Arc<Mutex<Shard>>, ip: String, port: String) {
+        println!(
+            "{color_bright_green}[SHARD] Accepting connections on port: {}{style_reset}",
+            port.parse::<u64>().unwrap() + 1000
+        );
         let listener =
             TcpListener::bind(format!("{}:{}", ip, port.parse::<u64>().unwrap() + 1000)).unwrap();
 

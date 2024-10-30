@@ -1,0 +1,14 @@
+ *** RUNNING DATE-TIME: 2024-10-30 05:59:29 UTC ***
+
+[2024-10-30 05:59:29 UTC] 
+>>> Node name: "node1", ip: 127.0.0.1, port: 5433
+
+[2024-10-30 05:59:29 UTC] Is self.
+
+[2024-10-30 05:59:29 UTC] Node node1 is listening on 127.0.0.1:7433
+
+[2024-10-30 05:59:40 UTC] Connection accepted from Node: 127.0.0.1:53207
+
+[2024-10-30 05:59:51 UTC] Connection accepted from Node: 127.0.0.1:53217
+
+[2024-10-30 06:00:38 UTC] Connection accepted from Node: 127.0.0.1:53232

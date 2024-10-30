@@ -1,0 +1,16 @@
+ *** RUNNING DATE-TIME: 2024-10-30 05:59:51 UTC ***
+
+[2024-10-30 05:59:51 UTC] 
+>>> Node name: "node1", ip: 127.0.0.1, port: 5433
+
+[2024-10-30 05:59:51 UTC] Node node3 connected to Node node1
+
+[2024-10-30 05:59:51 UTC] 
+>>> Node name: "node2", ip: 127.0.0.1, port: 5434
+
+[2024-10-30 05:59:51 UTC] Node node3 connected to Node node2
+
+[2024-10-30 05:59:51 UTC] 
+>>> Node name: "node3", ip: 127.0.0.1, port: 5435
+
+[2024-10-30 05:59:51 UTC] Is self.
