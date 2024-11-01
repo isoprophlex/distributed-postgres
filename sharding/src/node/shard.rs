@@ -161,15 +161,9 @@ impl Shard {
         };
 
         match message.get_message_type() {
-            MessageType::InitConnection => {
-                self.handle_init_connection_message(message)
-            }
-            MessageType::AskMemoryUpdate => {
-                self.handle_memory_update_message()
-            }
-            MessageType::GetRouter => {
-                self.handle_get_router_message()
-            }
+            MessageType::InitConnection => self.handle_init_connection_message(message),
+            MessageType::AskMemoryUpdate => self.handle_memory_update_message(),
+            MessageType::GetRouter => self.handle_get_router_message(),
             _ => {
                 error!(
                     "Message type received: {:?}, not yet implemented",
