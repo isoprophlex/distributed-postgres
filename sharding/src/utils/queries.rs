@@ -11,6 +11,7 @@ impl QueryTypes {
     const DROP: &'static str = "DROP";
     const UPDATE: &'static str = "UPDATE";
     const CREATE: &'static str = "CREATE";
+    const SELECT: &'static str = "SELECT";
 }
 
 pub fn query_is_insert(query: &str) -> bool {
@@ -18,7 +19,7 @@ pub fn query_is_insert(query: &str) -> bool {
 }
 
 pub fn query_is_select(query: &str) -> bool {
-    query_is(query, "SELECT")
+    query_is(query, QueryTypes::SELECT)
 }
 
 fn query_is(query: &str, query_type: &str) -> bool {
