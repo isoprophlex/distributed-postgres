@@ -162,7 +162,7 @@ fn init_router(ip: &str, port: &str, config_file_path: Option<&str>) {
     let ip_clone = ip.to_string();
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
-        Router::wait_for_client(shared_router, ip_clone, port_clone);
+        Router::wait_for_client(&shared_router, &ip_clone, &port_clone);
     });
 
     println!("Router node initializes");
