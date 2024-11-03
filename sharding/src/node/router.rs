@@ -165,7 +165,7 @@ impl Router {
         };
 
         router.configure_connections(config_path);
-        
+
         router
     }
 
