@@ -25,8 +25,8 @@ pub struct Client {
 
 impl Client {
     /// Creates a new Client node with the given port
-    pub fn new(ip: &str, port: &str, config_path: Option<&str>) -> Self {
-        let config = get_nodes_config(config_path);
+    pub fn new(ip: &str, port: &str) -> Self {
+        let config = get_nodes_config();
         let mut candidate_ip;
         let mut candidate_port;
 
@@ -128,6 +128,8 @@ impl NodeRole for Client {
         let mut stream = self.router_postgres_client.stream.lock().unwrap();
         stream.write_all(message.to_string().as_bytes()).unwrap();
 
+        // Si se cayó el router, volver a comunicarse con los nodos y pedir información de router
+
         let mut buffer: [u8; 1024] = [0; 1024];
 
         match stream.read(&mut buffer) {
@@ -141,5 +143,9 @@ impl NodeRole for Client {
             }
             Err(_e) => None,
         }
+    }
+
+    fn stop(&mut self) {
+        // Not implemented
     }
 }
