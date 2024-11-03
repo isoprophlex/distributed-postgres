@@ -83,9 +83,11 @@ impl Shard {
         MemoryManager::new(reserved_memory)
     }
 
-    pub fn accept_connections(shared_shard: &Arc<Mutex<Shard>>, ip: &str, port: &str) {
-        let listener =
-            TcpListener::bind(format!("{}:{}", ip, port.parse::<u64>().unwrap() + 1000)).unwrap();
+    pub fn accept_connections(shared_shard: Arc<Mutex<Shard>>, ip: String, accepting_port: String) {
+        let port = accepting_port.parse::<u64>().unwrap() + 1000;
+        println!("Attempting to bind listener to port: {}", port);
+
+        let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
 
         let mut handles: Vec<JoinHandle<()>> = Vec::new();
 
@@ -93,6 +95,7 @@ impl Shard {
             Ok(shared_router) => shared_router,
             Err(_) => {
                 eprintln!("Failed to get shared router");
+                drop(listener);
                 return;
             }
         };
@@ -111,12 +114,21 @@ impl Shard {
 
             if *must_stop {
                 println!("{color_red}STOPPED ACCEPT CONNECTIONS{style_reset}");
+                drop(listener);
                 handles.into_iter().for_each(|handle| handle.join().unwrap());
                 return;
             }
 
             std::mem::drop(must_stop);
-            println!("LOOPING accept connections");
+
+            // listener is non-blocking, so it can check if the shard is stopped
+            match listener.set_nonblocking(true) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Failed to set listener to non-blocking: {}", e);
+                    return;
+                }
+            }
 
             match listener.accept() {
                 Ok((stream, addr)) => {
@@ -137,15 +149,30 @@ impl Shard {
                     handles.push(_handle);
                 }
                 Err(e) => {
-                    eprintln!("Failed to accept a connection: {e}");
+                    // continue if there are no incoming connections
                 }
             }
         }
     }
 
     // Listen for incoming messages
-    pub fn listen(shared_shard: &Arc<Mutex<Shard>>, stream: &Arc<Mutex<TcpStream>>, stopped: Arc<Mutex<bool>>) {
+    pub fn listen(shared_shard: &Arc<Mutex<Shard>>, tcp_stream: &Arc<Mutex<TcpStream>>, stopped: Arc<Mutex<bool>>) {
         println!("Listening for incoming messages");
+
+        let mut stream = match tcp_stream.lock() {
+            Ok(stream) => stream,
+            Err(_) => {
+                eprintln!("Failed to get stream");
+                return;
+            }
+        };
+        
+        match stream.set_read_timeout(Some(std::time::Duration::new(10, 0))) {
+            Ok(_) => {}
+            Err(_e) => {
+                println!("Failed to set read timeout");
+            }
+        }
 
         loop {
             // println!("Inside listen loop");
@@ -159,6 +186,7 @@ impl Shard {
 
             if *must_stop {
                 println!("{color_red}STOPPED LISTENING{style_reset}");
+                drop(stream);
                 return;
             }
 
@@ -171,8 +199,6 @@ impl Shard {
             let mut buffer = [0; 1024];
 
             // println!("Before stream lock");
-
-            let mut stream = stream.lock().unwrap();
 
             // println!("After stream lock");
 

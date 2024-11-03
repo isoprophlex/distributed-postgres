@@ -3,6 +3,7 @@ use crate::utils::node_config::get_nodes_config_raft;
 use super::router::Router;
 use super::shard::Shard;
 use std::ffi::CStr;
+use std::fmt::Error;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -18,14 +19,14 @@ pub trait NodeRole {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum NodeType {
     Client,
     Router,
     Shard,
 }
 
-/* Node Singleton */
+// MARK: Node Singleton
 
 pub struct NodeInstance {
     pub instance: Option<Box<dyn NodeRole>>,
@@ -45,66 +46,7 @@ impl NodeInstance {
     }
 }
 
-fn change_role(new_role: NodeType) {
-
-    println!("Changing role to {:?}", new_role);
-    
-    if new_role == NodeType::Client {
-        println!("NodeRole cannot be changed to Client");
-        return;
-    };
-
-    println!("Trying to get node instance");
-    let node_instance = get_node_instance();
-    println!("AFTER get node instance");
-    let current_instance = &mut node_instance.instance;
-
-    println!("AFTER current instance");
-
-    if node_instance.node_type == new_role {
-        println!("NodeRole is already {:?}", new_role);
-        return;
-    }
-
-    println!("node type changes");
-
-    let ip = node_instance.ip.clone();
-    let port = node_instance.port.clone();
-
-    println!("ip: {}, port: {}", ip, port);
-
-    // Stop current instance
-    match current_instance.as_mut() {
-        Some(instance) => {
-            println!("Stopping current instance");
-            instance.stop();
-        }
-        None => {
-            panic!("Node instance not initialized");
-        }
-    }
-
-    println!("AFTER STOPPING current instance");
-
-    match new_role {
-        NodeType::Router => {
-            // TODO-A: Implement data migration to another shard
-            let router = Router::new(&ip, &port);
-            *current_instance = Some(Box::new(router));
-            println!("NodeRole changed to Router");
-        }
-        NodeType::Shard => {
-            let shard = Shard::new(&ip, &port);
-            *current_instance = Some(Box::new(shard));
-            println!("NodeRole changed to Shard");
-        }
-        _ => {
-            panic!("NodeRole can only be changed to Router or Shard");
-        }
-    }
-
-    println!("AFTER CHANGING current instance");
-}
+// MARK: Node Instance
 
 pub static mut NODE_INSTANCE: Option<NodeInstance> = None;
 
@@ -128,7 +70,9 @@ pub fn get_node_role() -> &'static mut dyn NodeRole {
     }
 }
 
-// External use of Node Instance
+// MARK: PSQL use
+
+/// External use of Node Instance from PostgreSQL
 #[no_mangle]
 pub extern "C" fn init_node_instance(
     node_type: NodeType,
@@ -151,13 +95,20 @@ pub extern "C" fn init_node_instance(
     }
     let ip = "127.0.0.1";
     println!("before init_shard ip: {}, port: {}", ip, found_port);
-    new_node_instance(node_type, ip, &found_port);
+    new_node_instance(node_type.clone(), ip, &found_port);
 
-    let (transmitter, receiver): (Sender<bool>, Receiver<bool>) = mpsc::channel();
+    // If the node is a client, it does not need to run raft. Thus, it can return after initializing
+    if node_type == NodeType::Client {
+        return;
+    }
     
+    let (transmitter, receiver): (Sender<bool>, Receiver<bool>) = mpsc::channel();
+
     run_raft(ip.to_string(), found_port, transmitter);
-    listen_receiver(receiver);
+    listen_raft_receiver(receiver);
 }
+
+// MARK: Raft
 
 fn run_raft(ip: String, port: String, transmitter: Sender<bool>) {
     thread::spawn(move || {
@@ -176,32 +127,6 @@ fn run_raft(ip: String, port: String, transmitter: Sender<bool>) {
             });
         });
     });
-}
-
-fn listen_receiver(receiver: Receiver<bool>) {
-    thread::spawn(move || {
-        loop {
-            match receiver.recv() {
-                Ok(stopped) => {
-                    if stopped {
-                        change_role(NodeType::Router);
-                    }
-                }
-                Err(e) => {
-                    println!("Error receiving from raft transmitter: {:?}", e);
-                }
-            }
-        }
-    });
-}
-
-fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
-    // Initialize node based on node type
-    match node_type {
-        NodeType::Router => init_router(ip, port),
-        NodeType::Shard => init_shard(ip, port),
-        NodeType::Client => init_client(ip, port),
-    }
 }
 
 async fn new_raft_instance(
@@ -234,6 +159,99 @@ async fn new_raft_instance(
             transmitter
         )
         .await;
+}
+
+// MARK: Node Role
+
+fn listen_raft_receiver(receiver: Receiver<bool>) {
+    thread::spawn(move || {
+        loop {
+            match receiver.recv() {
+                Ok(stopped) => {
+                    let role = if stopped { NodeType::Router } else { NodeType::Shard };
+                    match change_role(role.to_owned()) {
+                        Ok(_) => {
+                            println!("Role changing finished succesfully");
+                        }
+                        Err(_) => {
+                            println!("Error changing role to {:?}", role);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("Error receiving from raft transmitter: {:?}", e);
+                }
+            }
+        }
+    });
+}
+
+fn change_role(new_role: NodeType) -> Result<(), Error> {
+
+    println!("Changing role to {:?}", new_role);
+    
+    if new_role == NodeType::Client {
+        println!("NodeRole cannot be changed to Client, it is not a valid role");
+        return Err(Error);
+    };
+
+    println!("Trying to get node instance");
+    let node_instance = get_node_instance();
+    println!("AFTER get node instance");
+    let current_instance = &mut node_instance.instance;
+
+    println!("AFTER current instance");
+
+    if node_instance.node_type == new_role {
+        println!("NodeRole is already {:?}", new_role);
+        return Ok(());
+    }
+
+    println!("node type changes");
+
+    let ip = node_instance.ip.clone();
+    let port = node_instance.port.clone();
+
+    println!("ip: {}, port: {}", ip, port);
+
+    // Stop current instance
+    match current_instance.as_mut() {
+        Some(instance) => {
+            println!("Stopping current instance");
+            instance.stop();
+        }
+        None => {
+            println!("Node instance not initialized");
+            return Err(Error);
+        }
+    }
+
+    println!("AFTER STOPPING current instance");
+
+    match new_role {
+        NodeType::Router => {
+            init_router(&ip, &port);
+        }
+        NodeType::Shard => {
+            init_shard(&ip, &port);
+        }
+        _ => {
+            println!("NodeRole can only be changed to Router or Shard");
+            return Err(Error);
+        }
+    }
+
+    println!("AFTER CHANGING current instance");
+    Ok(())
+}
+
+fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
+    // Initialize node based on node type
+    match node_type {
+        NodeType::Router => init_router(ip, port),
+        NodeType::Shard => init_shard(ip, port),
+        NodeType::Client => init_client(ip, port),
+    }
 }
 
 fn init_router(ip: &str, port: &str) {

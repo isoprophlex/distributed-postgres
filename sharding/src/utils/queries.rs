@@ -31,7 +31,6 @@ pub fn query_affects_memory_state(query: &str) -> bool {
         || query_is(query, QueryTypes::DELETE)
         || query_is(query, QueryTypes::DROP)
         || query_is(query, QueryTypes::UPDATE)
-        || query_is(query, QueryTypes::CREATE)
 }
 
 /// Gets the name of the table from a query, whenever the query has a "FROM <tablename>" clause.

@@ -6,16 +6,17 @@ use super::shard_manager::ShardManager;
 use super::tables_id_info::TablesIdInfo;
 use crate::node::messages::message::{Message, MessageType};
 use crate::node::messages::node_info::NodeInfo;
-use crate::utils::common::ConvertToString;
+use crate::utils::common::{ConvertToString};
 use crate::utils::common::{connect_to_node, Channel};
 use crate::utils::node_config::{get_nodes_config, Node};
 use crate::utils::queries::{
     format_query_with_new_id, format_rows_with_offset, get_id_if_exists, get_table_name_from_query,
     print_query_response, query_affects_memory_state, query_is_insert, query_is_select,
 };
-use inline_colorization::{color_bright_green, color_red, style_reset};
 use log::{debug, error, info};
+use inline_colorization::*;
 use std::f64::consts::E;
+use std::fmt::Error;
 use std::io::{Read, Write};
 use std::sync::{Arc, MutexGuard, RwLock};
 use std::{io, net::TcpListener, net::TcpStream, sync::Mutex, thread};
@@ -46,9 +47,11 @@ impl Router {
     }
 
     /// Listen for incoming connections from clients.
-    pub fn wait_for_client(shared_router: &Arc<Mutex<Router>>, ip: &str, port: &str) {
-        let listener =
-            TcpListener::bind(format!("{}:{}", ip, port.parse::<u64>().unwrap() + 1000)).unwrap();
+    pub fn wait_for_client(shared_router: &Arc<Mutex<Router>>, ip: String, waiting_port: String) {
+        let port = waiting_port.parse::<u64>().unwrap() + 1000;
+        println!("Attempting to bind listener to port: {}", port);
+
+        let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
 
         let router = match shared_router.lock() {
             Ok(shared_router) => shared_router,
@@ -70,10 +73,18 @@ impl Router {
 
             if *stopped {
                 println!("Stopped is true");
+                drop(listener);
                 return;
             }
 
-            println!("LOOPING wait_for_client");
+            match listener.set_nonblocking(true) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Failed to set listener to non-blocking: {}", e);
+                    return;
+                }
+            }
+
             match listener.accept() {
                 Ok((stream, addr)) => {
                     println!(
@@ -91,7 +102,7 @@ impl Router {
                     });
                 }
                 Err(e) => {
-                    eprintln!("Failed to accept a connection: {e}");
+                    // No connection yet, ignore
                 }
             }
         }
@@ -232,6 +243,11 @@ impl Router {
         let node_ip = node.ip;
         let node_port = node.port;
 
+        if self.set_health_connection(node_ip.as_str(), node_port.as_str()).is_err() {
+            println!("Failed to connect to node: {}", node.name);
+            return;
+        }
+
         println!("Connecting to ip {} and port: {}", node_ip, node_port);
 
         let Ok(shard_client) = connect_to_node(&node_ip, &node_port) else {
@@ -242,7 +258,6 @@ impl Router {
         println!("CONNECTED to ip {} and port: {}", node_ip, node_port);
 
         self.save_shard_client(node_port.to_string(), shard_client);
-        self.set_health_connection(node_ip.as_str(), node_port.as_str());
     }
 
     /// Saves the shard client in the Router's shards `IndexMap` with its corresponding shard id as key.
@@ -251,16 +266,17 @@ impl Router {
         shards.insert(shard_id, shard_client);
     }
 
-    /// Sets the `health_connection` to the shard with the given ip and port, initializing the communication with a handshake between the router and the shard.
-    fn set_health_connection(&mut self, node_ip: &str, node_port: &str) {
+    /// Sets the health_connection to the shard with the given ip and port, initializing the communication with a handshake between the router and the shard.
+    fn set_health_connection(&mut self, node_ip: &str, node_port: &str) -> Result<(), Error> {
         let Ok(health_connection) = Router::get_shard_channel(node_ip, node_port) else {
             println!("Failed to create health-connection to port: {node_port}");
-            return;
+            return Err(Error);
         };
 
         if self.send_init_connection_message(&health_connection.clone(), node_port) {
             self.save_comm_channel(node_port.to_string(), health_connection);
         }
+        Ok(())
     }
 
     /// Saves the communication channel to the shard with the given shard id as key.
@@ -367,6 +383,7 @@ impl Router {
     /// Establishes a health connection with the node with the given ip and port, returning a Channel.
     fn get_shard_channel(node_ip: &str, node_port: &str) -> Result<Channel, io::Error> {
         let port = node_port.parse::<u64>().unwrap() + 1000;
+        println!("Attempting to connect to port: {}", port);
         match TcpStream::connect(format!("{node_ip}:{port}")) {
             Ok(stream) => {
                 println!(

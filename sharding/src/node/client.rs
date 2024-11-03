@@ -125,8 +125,32 @@ impl NodeRole for Client {
     fn send_query(&mut self, query: &str) -> Option<String> {
         let message =
             message::Message::new_query(Some(self.client_info.clone()), query.to_string());
-        let mut stream = self.router_postgres_client.stream.lock().unwrap();
-        stream.write_all(message.to_string().as_bytes()).unwrap();
+
+        println!(
+            "{color_bright_blue}Sending query to router: {}{style_reset}",
+            query
+        );
+        let mut stream = match self.router_postgres_client.stream.lock() {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("Failed to lock the stream: {:?}", e);
+                return None;
+            }
+        };
+        println!(
+            "{color_bright_blue}Stream locked{style_reset}"
+        );
+        match stream.write_all(message.to_string().as_bytes()) {
+            Ok(_) => {
+                println!(
+                    "{color_bright_blue}Query sent to router{style_reset}"
+                );
+            }
+            Err(e) => {
+                eprintln!("Failed to send the query: {:?}", e);
+                return None;
+            }
+        }
 
         // Si se cayó el router, volver a comunicarse con los nodos y pedir información de router
 
