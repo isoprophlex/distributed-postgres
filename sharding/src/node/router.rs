@@ -124,14 +124,7 @@ impl Router {
         };
 
         if message.get_message_type() == MessageType::Query {
-            let query = message.get_data().query.unwrap();
-            let Some(response) = self.send_query(&query) else {
-                error!("Failed to send query to shards");
-                return None;
-            };
-            let response_message = Message::new_query_response(response);
-
-            Some(response_message.to_string())
+            self.handle_query_message(&message)
         } else {
             error!(
                 "Message type received: {:?}, not yet implemented",
@@ -140,6 +133,17 @@ impl Router {
 
             None
         }
+    }
+
+    fn handle_query_message(&mut self, message: &Message) -> Option<String> {
+        let query = message.get_data().query.unwrap();
+        let Some(response) = self.send_query(&query) else {
+            error!("Failed to send query to shards");
+            return None;
+        };
+        let response_message = Message::new_query_response(response);
+
+        Some(response_message.to_string())
     }
 
     /// Initializes the Router node with connections to the shards specified in the configuration file.
@@ -255,32 +259,36 @@ impl Router {
     /// Handles the responses from the shard from the `health_connection` channel.
     fn handle_response(&mut self, response_message: &Message, node_port: &str) -> bool {
         match response_message.get_message_type() {
-            MessageType::Agreed => {
-                debug!(
-                    "{color_bright_green}Shard {node_port} accepted the connection{style_reset}"
-                );
-                let memory_size = response_message.get_data().payload.unwrap();
-                let max_ids_info = response_message.get_data().max_ids.unwrap();
-                debug!("{color_bright_green}Memory size: {memory_size}{style_reset}");
-                debug!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
-                self.save_shard_in_manager(memory_size, node_port, max_ids_info);
-                true
-            }
+            MessageType::Agreed => self.handle_agreed_message(&response_message.clone(), node_port),
             MessageType::MemoryUpdate => {
-                let memory_size = response_message.get_data().payload.unwrap();
-                let max_ids_info = response_message.get_data().max_ids.unwrap();
-                debug!(
-                    "{color_bright_green}Shard {node_port} updated its memory size to {memory_size}{style_reset}"
-                );
-                debug!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
-                self.update_shard_in_manager(memory_size, node_port, max_ids_info);
-                true
+                self.handle_memory_update_message(&response_message.clone(), node_port)
             }
             _ => {
                 debug!("{color_red}Shard {node_port} denied the connection{style_reset}");
                 false
             }
         }
+    }
+
+    fn handle_agreed_message(&mut self, message: &Message, node_port: &str) -> bool {
+        debug!("{color_bright_green}Shard {node_port} accepted the connection{style_reset}");
+        let memory_size = message.get_data().payload.unwrap();
+        let max_ids_info = message.get_data().max_ids.unwrap();
+        debug!("{color_bright_green}Memory size: {memory_size}{style_reset}");
+        debug!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
+        self.save_shard_in_manager(memory_size, node_port, max_ids_info);
+        true
+    }
+
+    fn handle_memory_update_message(&mut self, message: &Message, node_port: &str) -> bool {
+        let memory_size = message.get_data().payload.unwrap();
+        let max_ids_info = message.get_data().max_ids.unwrap();
+        debug!(
+            "{color_bright_green}Shard {node_port} updated its memory size to {memory_size}{style_reset}"
+        );
+        debug!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
+        self.update_shard_in_manager(memory_size, node_port, max_ids_info);
+        true
     }
 
     /// Adds a shard to the `ShardManager` with the given memory size and shard id.
