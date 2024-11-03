@@ -3,7 +3,6 @@ use crate::utils::node_config::get_nodes_config_raft;
 
 use super::router::Router;
 use super::shard::Shard;
-use actix_rt::System;
 use std::ffi::CStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -185,7 +184,7 @@ fn init_shard(ip: &str, port: &str) {
     let ip_clone = ip.to_string();
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
-        Shard::accept_connections(shared_shard, ip_clone, port_clone);
+        Shard::accept_connections(&shared_shard, &ip_clone, &port_clone);
     });
 
     println!("Sharding node initializes");
