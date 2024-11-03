@@ -152,7 +152,6 @@ impl Router {
         port: &str,
         config_path: Option<&str>,
     ) -> Router {
-        let config = get_nodes_config(config_path);
         let shards: IndexMap<String, PostgresClient> = IndexMap::new();
         let comm_channels: IndexMap<String, Channel> = IndexMap::new();
         let shard_manager = ShardManager::new();
@@ -165,13 +164,19 @@ impl Router {
             port: Arc::from(port),
         };
 
+        router.configure_connections(config_path);
+        
+        router
+    }
+
+    fn configure_connections(&mut self, config_path: Option<&str>) {
+        let config = get_nodes_config(config_path);
         for shard in config.nodes {
-            if (shard.ip == router.ip.as_ref()) && (shard.port == router.port.as_ref()) {
+            if (shard.ip == self.ip.as_ref()) && (shard.port == self.port.as_ref()) {
                 continue;
             }
-            router.configure_shard_connection_to(shard);
+            self.configure_shard_connection_to(shard);
         }
-        router
     }
 
     /// Configures the connection to a shard with the given ip and port.
