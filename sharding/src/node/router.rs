@@ -14,6 +14,7 @@ use crate::utils::queries::{
     print_query_response, query_affects_memory_state, query_is_insert, query_is_select,
 };
 use inline_colorization::{color_bright_green, color_red, style_reset};
+use log::{debug, error, info};
 use std::io::{Read, Write};
 use std::sync::{Arc, MutexGuard, RwLock};
 use std::{io, net::TcpListener, net::TcpStream, sync::Mutex, thread};
@@ -51,7 +52,7 @@ impl Router {
         loop {
             match listener.accept() {
                 Ok((stream, addr)) => {
-                    println!(
+                    info!(
                         "{color_bright_green}[ROUTER] New connection accepted from {addr}.{style_reset}"
                     );
 
@@ -65,7 +66,7 @@ impl Router {
                     });
                 }
                 Err(e) => {
-                    eprintln!("Failed to accept a connection: {e}");
+                    error!("Failed to accept a connection: {e}");
                 }
             }
         }
@@ -117,7 +118,7 @@ impl Router {
         let message = match Message::from_string(message) {
             Ok(message) => message,
             Err(e) => {
-                eprintln!("Failed to parse message: {e:?}. Message: [{message:?}]");
+                error!("Failed to parse message: {e:?}. Message: [{message:?}]");
                 return None;
             }
         };
@@ -125,14 +126,14 @@ impl Router {
         if message.get_message_type() == MessageType::Query {
             let query = message.get_data().query.unwrap();
             let Some(response) = self.send_query(&query) else {
-                eprintln!("Failed to send query to shards");
+                error!("Failed to send query to shards");
                 return None;
             };
             let response_message = Message::new_query_response(response);
 
             Some(response_message.to_string())
         } else {
-            eprintln!(
+            error!(
                 "Message type received: {:?}, not yet implemented",
                 message.get_message_type()
             );
@@ -175,11 +176,11 @@ impl Router {
         let node_port = node.port;
 
         let Ok(shard_client) = connect_to_node(&node_ip, &node_port) else {
-            println!("Failed to connect to port: {node_port}");
+            debug!("Failed to connect to port: {node_port}");
             return;
         };
 
-        println!("Connected to ip {node_ip} and port: {node_port}");
+        debug!("Connected to ip {node_ip} and port: {node_port}");
 
         self.save_shard_client(node_port.to_string(), shard_client);
         self.set_health_connection(node_ip.as_str(), node_port.as_str());
@@ -194,7 +195,7 @@ impl Router {
     /// Sets the `health_connection` to the shard with the given ip and port, initializing the communication with a handshake between the router and the shard.
     fn set_health_connection(&mut self, node_ip: &str, node_port: &str) {
         let Ok(health_connection) = Router::get_shard_channel(node_ip, node_port) else {
-            println!("Failed to create health-connection to port: {node_port}");
+            debug!("Failed to create health-connection to port: {node_port}");
             return;
         };
 
@@ -224,12 +225,12 @@ impl Router {
             port: self.port.as_ref().to_string(),
         };
         let update_message = Message::new_init_connection(node_info);
-        println!("Sending message to shard: {update_message:?}");
+        debug!("Sending message to shard: {update_message:?}");
 
         let message_string = update_message.to_string();
         stream.write_all(message_string.as_bytes()).unwrap();
 
-        println!("Waiting for response from shard");
+        debug!("Waiting for response from shard");
 
         let response: &mut [u8] = &mut [0; 1024];
 
@@ -241,13 +242,13 @@ impl Router {
         if stream.read(response).is_ok() {
             let response_string = String::from_utf8_lossy(response);
             let Ok(response_message) = Message::from_string(&response_string) else {
-                eprintln!("Failed to parse message from shard");
+                error!("Failed to parse message from shard");
                 return false;
             };
 
             return self.handle_response(&response_message, node_port);
         }
-        println!("{color_red}Shard {node_port} did not respond{style_reset}");
+        debug!("{color_red}Shard {node_port} did not respond{style_reset}");
         false
     }
 
@@ -255,28 +256,28 @@ impl Router {
     fn handle_response(&mut self, response_message: &Message, node_port: &str) -> bool {
         match response_message.get_message_type() {
             MessageType::Agreed => {
-                println!(
+                debug!(
                     "{color_bright_green}Shard {node_port} accepted the connection{style_reset}"
                 );
                 let memory_size = response_message.get_data().payload.unwrap();
                 let max_ids_info = response_message.get_data().max_ids.unwrap();
-                println!("{color_bright_green}Memory size: {memory_size}{style_reset}");
-                println!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
+                debug!("{color_bright_green}Memory size: {memory_size}{style_reset}");
+                debug!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
                 self.save_shard_in_manager(memory_size, node_port, max_ids_info);
                 true
             }
             MessageType::MemoryUpdate => {
                 let memory_size = response_message.get_data().payload.unwrap();
                 let max_ids_info = response_message.get_data().max_ids.unwrap();
-                println!(
+                debug!(
                     "{color_bright_green}Shard {node_port} updated its memory size to {memory_size}{style_reset}"
                 );
-                println!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
+                debug!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
                 self.update_shard_in_manager(memory_size, node_port, max_ids_info);
                 true
             }
             _ => {
-                println!("{color_red}Shard {node_port} denied the connection{style_reset}");
+                debug!("{color_red}Shard {node_port} denied the connection{style_reset}");
                 false
             }
         }
@@ -287,8 +288,8 @@ impl Router {
         let mut shard_manager = self.shard_manager.as_ref().clone();
         shard_manager.add_shard(memory_size, shard_id.to_string());
         shard_manager.save_max_ids_for_shard(shard_id.to_string(), max_ids);
-        println!("{color_bright_green}Shard {shard_id} added to ShardManager{style_reset}");
-        println!("Shard Manager: {shard_manager:?}");
+        debug!("{color_bright_green}Shard {shard_id} added to ShardManager{style_reset}");
+        debug!("Shard Manager: {shard_manager:?}");
     }
 
     /// Updates the shard in the `ShardManager` with the given memory size and shard id.
@@ -296,8 +297,8 @@ impl Router {
         let mut shard_manager = self.shard_manager.as_ref().clone();
         shard_manager.update_shard_memory(memory_size, shard_id.to_string());
         shard_manager.save_max_ids_for_shard(shard_id.to_string(), max_ids);
-        println!("{color_bright_green}Shard {shard_id} updated in ShardManager{style_reset}");
-        println!("Shard Manager: {shard_manager:?}");
+        debug!("{color_bright_green}Shard {shard_id} updated in ShardManager{style_reset}");
+        debug!("Shard Manager: {shard_manager:?}");
     }
 
     /// Establishes a health connection with the node with the given ip and port, returning a Channel.
@@ -305,7 +306,7 @@ impl Router {
         let port = node_port.parse::<u64>().unwrap() + 1000;
         match TcpStream::connect(format!("{node_ip}:{port}")) {
             Ok(stream) => {
-                println!(
+                debug!(
                     "{color_bright_green}Health connection established with {node_ip}:{port}{style_reset}"
                 );
                 Ok(Channel {
@@ -313,7 +314,7 @@ impl Router {
                 })
             }
             Err(e) => {
-                println!(
+                debug!(
                     "{color_red}Error establishing health connection with {node_ip}:{port}. Error: {e:?}{style_reset}"
                 );
                 Err(e)
@@ -328,13 +329,13 @@ impl Router {
     /// Returns the query formatted if needed (if there's a 'WHERE ID=' clause, offset might need to be removed)
     fn get_data_needed_from(&mut self, query: &str) -> (Vec<String>, bool, String) {
         if let Some(id) = get_id_if_exists(query) {
-            println!("ID found in query: {id}");
+            debug!("ID found in query: {id}");
             return self.get_specific_shard_with(id, query);
         }
 
-        println!("ID NOT FOUND in query.");
+        debug!("ID NOT FOUND in query.");
         if query_is_insert(query) {
-            println!("Query is INSERT");
+            debug!("Query is INSERT");
             let shard = self.shard_manager.peek().unwrap();
             (vec![shard.clone()], true, query.to_string())
         } else {
@@ -356,7 +357,7 @@ impl Router {
             );
         };
 
-        println!("Table name: {table_name}");
+        debug!("Table name: {table_name}");
 
         for shard_id in self.shards.lock().unwrap().keys() {
             let Some(max_id) = self
@@ -378,7 +379,7 @@ impl Router {
             }
         }
 
-        println!("ID not found in any shard");
+        debug!("ID not found in any shard");
         return (
             self.shards.lock().unwrap().keys().cloned().collect(),
             query_affects_memory_state(query),
@@ -388,7 +389,7 @@ impl Router {
 
     fn format_response(&self, shards_responses: IndexMap<String, Vec<Row>>, query: &str) -> String {
         let Some(table_name) = get_table_name_from_query(query) else {
-            eprintln!("Failed to get table name from query");
+            error!("Failed to get table name from query");
             return String::new();
         };
 
@@ -399,7 +400,7 @@ impl Router {
                 .shard_manager
                 .get_max_ids_for_shard_table(&shard_id, &table_name)
             else {
-                eprintln!("Failed to get offset for shard");
+                error!("Failed to get offset for shard");
                 return String::new();
             };
             rows_offset.push((rows, last_offset));
@@ -412,14 +413,14 @@ impl Router {
 
 impl NodeRole for Router {
     fn send_query(&mut self, received_query: &str) -> Option<String> {
-        println!("Router send_query called with query: {received_query:?}");
+        debug!("Router send_query called with query: {received_query:?}");
 
         let (shards, is_insert, query) = self.get_data_needed_from(received_query);
 
-        println!("Shards: {shards:?}, is_insert: {is_insert}, query: {query}");
+        debug!("Shards: {shards:?}, is_insert: {is_insert}, query: {query}");
 
         if shards.is_empty() {
-            eprintln!("No shards found for the query");
+            error!("No shards found for the query");
             return None;
         }
 
@@ -434,10 +435,10 @@ impl NodeRole for Router {
         }
 
         let response = if query_is_select(&query) && !shards_responses.is_empty() {
-            println!("Query is SELECT and shards_responses is not empty");
+            debug!("Query is SELECT and shards_responses is not empty");
             self.format_response(shards_responses, &query)
         } else {
-            println!(
+            debug!(
                 "Query is SELECT: {}, shards_responses is empty: {}",
                 query_is_insert(&query),
                 shards_responses.is_empty()
@@ -454,12 +455,12 @@ impl NodeRole for Router {
 impl Router {
     fn get_stream(&self, shard_id: &str) -> Option<Arc<Mutex<TcpStream>>> {
         let Ok(comm_channels) = self.comm_channels.read() else {
-            eprintln!("Failed to get comm channels");
+            error!("Failed to get comm channels");
             return None;
         };
 
         let Some(shard_comm_channel) = comm_channels.get(&shard_id.to_string()) else {
-            eprintln!("Failed to get comm channel for shard {shard_id}");
+            error!("Failed to get comm channel for shard {shard_id}");
             return None;
         };
 
@@ -482,7 +483,7 @@ impl Router {
         let response_string = String::from_utf8_lossy(&response);
 
         let Ok(response_message) = Message::from_string(&response_string) else {
-            eprintln!("Failed to parse message from shard");
+            error!("Failed to parse message from shard");
             // TODO-SHARD: handle this situation, should this try again? What happens if we can't update the shard's memory in the shard_manager?
             return false;
         };
@@ -494,12 +495,12 @@ impl Router {
     /// This must be called each time an insertion query is sent, and may be used to update the shard's memory size in the `ShardManager` in other circumstances.
     fn ask_for_memory_update(&mut self, shard_id: &str) {
         let Some(stream) = self.get_stream(shard_id) else {
-            eprintln!("Failed to get stream for shard {shard_id}");
+            error!("Failed to get stream for shard {shard_id}");
             return;
         };
 
         let Ok(mut writable_stream) = stream.try_lock() else {
-            eprintln!("Failed to get writable stream for shard {shard_id}");
+            error!("Failed to get writable stream for shard {shard_id}");
             return;
         };
 
@@ -513,7 +514,7 @@ impl Router {
             let rows = match shard.query(query, &[]) {
                 Ok(rows) => rows,
                 Err(e) => {
-                    eprintln!("Failed to send the query to the shard: {e:?}");
+                    error!("Failed to send the query to the shard: {e:?}");
                     return Vec::new();
                 }
             };
@@ -524,7 +525,7 @@ impl Router {
 
             return rows;
         }
-        eprintln!("Shard {shard_id:?} not found");
+        error!("Shard {shard_id:?} not found");
         Vec::new()
     }
 }
