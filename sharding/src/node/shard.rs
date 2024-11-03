@@ -8,12 +8,13 @@ use crate::utils::common::{connect_to_node, ConvertToString};
 use crate::utils::node_config::get_memory_config;
 use crate::utils::queries::print_rows;
 use indexmap::IndexMap;
-use inline_colorization::{color_blue, color_bright_green, style_reset};
+use inline_colorization::*;
 use log::{debug, error, info};
 use postgres::{Client as PostgresClient, Row};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::{io, thread};
 
 extern crate users;
@@ -28,6 +29,7 @@ pub struct Shard {
     memory_manager: Arc<Mutex<MemoryManager>>,
     router_info: Arc<Mutex<Option<NodeInfo>>>,
     tables_max_id: Arc<Mutex<TablesIdInfo>>,
+    pub stopped: Arc<Mutex<bool>>,
 }
 
 use std::fmt;
@@ -65,6 +67,7 @@ impl Shard {
             memory_manager: Arc::new(Mutex::new(memory_manager)),
             router_info: Arc::new(Mutex::new(None)),
             tables_max_id: Arc::new(Mutex::new(IndexMap::new())),
+            stopped: Arc::new(Mutex::new(false)),
         };
 
         let _ = shard.update();
@@ -84,7 +87,37 @@ impl Shard {
         let listener =
             TcpListener::bind(format!("{}:{}", ip, port.parse::<u64>().unwrap() + 1000)).unwrap();
 
+        let mut handles: Vec<JoinHandle<()>> = Vec::new();
+
+        let shard = match shared_shard.lock() {
+            Ok(shared_router) => shared_router,
+            Err(_) => {
+                eprintln!("Failed to get shared router");
+                return;
+            }
+        };
+
+        let stopped = shard.stopped.clone();
+        std::mem::drop(shard);
+
         loop {
+            let must_stop = match stopped.lock() {
+                Ok(stopped) => stopped,
+                Err(_) => {
+                    eprintln!("Failed to get stopped status");
+                    return;
+                }
+            };
+
+            if *must_stop {
+                println!("{color_red}STOPPED ACCEPT CONNECTIONS{style_reset}");
+                handles.into_iter().for_each(|handle| handle.join().unwrap());
+                return;
+            }
+
+            std::mem::drop(must_stop);
+            println!("LOOPING accept connections");
+
             match listener.accept() {
                 Ok((stream, addr)) => {
                     println!(
@@ -95,10 +128,13 @@ impl Shard {
                     let shard_clone = shared_shard.clone();
                     let shareable_stream = Arc::new(Mutex::new(stream));
                     let stream_clone = Arc::clone(&shareable_stream);
+                    let stopped_clone = stopped.clone();
 
                     let _handle = thread::spawn(move || {
-                        Shard::listen(&shard_clone, &stream_clone);
+                        println!("Inside thread spawn on accept_connections");
+                        Shard::listen(&shard_clone, &stream_clone, stopped_clone);
                     });
+                    handles.push(_handle);
                 }
                 Err(e) => {
                     eprintln!("Failed to accept a connection: {e}");
@@ -108,22 +144,47 @@ impl Shard {
     }
 
     // Listen for incoming messages
-    pub fn listen(shared_shard: &Arc<Mutex<Shard>>, stream: &Arc<Mutex<TcpStream>>) {
+    pub fn listen(shared_shard: &Arc<Mutex<Shard>>, stream: &Arc<Mutex<TcpStream>>, stopped: Arc<Mutex<bool>>) {
+        println!("Listening for incoming messages");
+
         loop {
+            // println!("Inside listen loop");
+            let must_stop = match stopped.lock() {
+                Ok(stopped) => stopped,
+                Err(_) => {
+                    eprintln!("Failed to get stopped status");
+                    return;
+                }
+            };
+
+            if *must_stop {
+                println!("{color_red}STOPPED LISTENING{style_reset}");
+                return;
+            }
+
+            std::mem::drop(must_stop);
+
+            // println!("LOOPING listen");
+
             // sleep for 1 millisecond to allow the stream to be ready to read
             thread::sleep(std::time::Duration::from_millis(1));
-            let mut shard = shared_shard.lock().unwrap();
             let mut buffer = [0; 1024];
 
+            // println!("Before stream lock");
+
             let mut stream = stream.lock().unwrap();
+
+            // println!("After stream lock");
 
             match stream.set_read_timeout(Some(std::time::Duration::new(10, 0))) {
                 Ok(()) => {}
                 Err(_e) => {
+                    println!("Failed to set read timeout");
                     continue;
                 }
             }
 
+            // println!("Before stream read");
             match stream.read(&mut buffer) {
                 Ok(chars) => {
                     if chars == 0 {
@@ -131,7 +192,16 @@ impl Shard {
                     }
 
                     let message_string = String::from_utf8_lossy(&buffer);
+                    println!("{color_bright_green}Received message: {message_string}{style_reset}");
 
+                    let mut shard = match shared_shard.lock() {
+                        Ok(shared_shard) => shared_shard,
+                        Err(_) => {
+                            eprintln!("Failed to get shared shard");
+                            continue;
+                        }
+                    };
+                    
                     if let Some(response) = shard.get_response_message(&message_string) {
                         println!("{color_bright_green}Sending response: {response}{style_reset}");
                         // stream.write(response.as_bytes()).unwrap();
@@ -292,5 +362,19 @@ impl NodeRole for Shard {
         let rows = self.get_rows_for_query(query)?;
         let _ = self.update(); // Updates memory and tables_max_id
         Some(rows.convert_to_string())
+    }
+
+    fn stop(&mut self) {
+        println!("{color_red}Stopping shard{style_reset}");
+        match self.stopped.lock() {
+            Ok(mut stopped) => {
+                println!("{color_red}Setting stopped to true{style_reset}");
+                *stopped = true;
+            }
+            Err(_) => {
+                eprintln!("Failed to stop router");
+            }
+        }
+        println!("{color_red}Shard stopped{style_reset}");
     }
 }

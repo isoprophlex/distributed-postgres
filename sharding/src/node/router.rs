@@ -15,6 +15,7 @@ use crate::utils::queries::{
 };
 use inline_colorization::{color_bright_green, color_red, style_reset};
 use log::{debug, error, info};
+use std::f64::consts::E;
 use std::io::{Read, Write};
 use std::sync::{Arc, MutexGuard, RwLock};
 use std::{io, net::TcpListener, net::TcpStream, sync::Mutex, thread};
@@ -34,14 +35,14 @@ pub struct Router {
     comm_channels: Arc<RwLock<IndexMap<String, Channel>>>,
     ip: Arc<str>,
     port: Arc<str>,
+    pub stopped: Arc<Mutex<bool>>,
 }
 
 impl Router {
-    /// Creates a new Router node with the given port and ip, and initializes the connections to the shards specified in the configuration file.
-    /// The `config_path` parameter is optional and specifies the path to the configuration file. If not provided, the default path will be used.
-    #[must_use]
-    pub fn new(ip: &str, port: &str, config_path: Option<&str>) -> Self {
-        Router::initialize_router_with_connections(ip, port, config_path)
+    /// Creates a new Router node with the given port and ip, connecting it to the shards specified in the configuration file.
+    pub fn new(ip: &str, port: &str) -> Self {
+        println!("Inside new::Router");
+        Router::initialize_router_with_connections(ip, port)
     }
 
     /// Listen for incoming connections from clients.
@@ -49,7 +50,30 @@ impl Router {
         let listener =
             TcpListener::bind(format!("{}:{}", ip, port.parse::<u64>().unwrap() + 1000)).unwrap();
 
+        let router = match shared_router.lock() {
+            Ok(shared_router) => shared_router,
+            Err(_) => {
+                eprintln!("Failed to get shared router");
+                return;
+            }
+        };
+
+        println!("wait_for_client");
         loop {
+            let stopped = match router.stopped.lock() {
+                Ok(stopped) => stopped,
+                Err(_) => {
+                    eprintln!("Failed to get stopped status");
+                    return;
+                }
+            };
+
+            if *stopped {
+                println!("Stopped is true");
+                return;
+            }
+
+            println!("LOOPING wait_for_client");
             match listener.accept() {
                 Ok((stream, addr)) => {
                     println!(
@@ -62,6 +86,7 @@ impl Router {
                     let stream_clone = Arc::clone(&shareable_stream);
 
                     let _handle = thread::spawn(move || {
+                        println!("Inside thread in wait_for_client");
                         Router::listen(&router_clone, &stream_clone);
                     });
                 }
@@ -72,12 +97,33 @@ impl Router {
         }
     }
 
-    // Listen for incoming messages.
+    // Listen for incoming messages
     pub fn listen(shared_router: &Arc<Mutex<Router>>, stream: &Arc<Mutex<TcpStream>>) {
+        let router = match shared_router.lock() {
+            Ok(shared_router) => shared_router,
+            Err(_) => {
+                eprintln!("Failed to get shared router");
+                return;
+            }
+        };
+
         loop {
+            let stopped = match router.stopped.lock() {
+                Ok(stopped) => stopped,
+                Err(_) => {
+                    eprintln!("Failed to get stopped status");
+                    return;
+                }
+            };
+
+            if *stopped {
+                println!("Stopped is true");
+                return;
+            }
+
+            println!("LOOPING listen");
             // sleep for 1 millisecond to allow the stream to be ready to read
             thread::sleep(std::time::Duration::from_millis(1));
-            let mut router = shared_router.lock().unwrap();
             let mut buffer = [0; 1024];
 
             let mut stream = stream.lock().unwrap();
@@ -96,11 +142,11 @@ impl Router {
                     }
 
                     let message_string = String::from_utf8_lossy(&buffer);
-
+                    let mut router = shared_router.lock().unwrap();
                     if let Some(response) = router.get_response_message(&message_string) {
-                        stream.write_all(response.as_bytes()).unwrap();
+                            stream.write_all(response.as_bytes()).unwrap();
                     } else {
-                        // do nothing
+                            // do nothing
                     }
                 }
                 Err(_e) => {
@@ -150,8 +196,8 @@ impl Router {
     fn initialize_router_with_connections(
         ip: &str,
         port: &str,
-        config_path: Option<&str>,
     ) -> Router {
+        let config = get_nodes_config();
         let shards: IndexMap<String, PostgresClient> = IndexMap::new();
         let comm_channels: IndexMap<String, Channel> = IndexMap::new();
         let shard_manager = ShardManager::new();
@@ -162,16 +208,18 @@ impl Router {
             comm_channels: Arc::new(RwLock::new(comm_channels)),
             ip: Arc::from(ip),
             port: Arc::from(port),
+            stopped: Arc::new(Mutex::new(false)),
         };
 
-        router.configure_connections(config_path);
+        router.configure_connections();
 
         router
     }
 
-    fn configure_connections(&mut self, config_path: Option<&str>) {
-        let config = get_nodes_config(config_path);
+    fn configure_connections(&mut self) {
+        let config = get_nodes_config();
         for shard in config.nodes {
+            println!("Configuring connection to shard: {:?}", shard);
             if (shard.ip == self.ip.as_ref()) && (shard.port == self.port.as_ref()) {
                 continue;
             }
@@ -184,12 +232,14 @@ impl Router {
         let node_ip = node.ip;
         let node_port = node.port;
 
+        println!("Connecting to ip {} and port: {}", node_ip, node_port);
+
         let Ok(shard_client) = connect_to_node(&node_ip, &node_port) else {
             println!("Failed to connect to port: {node_port}");
             return;
         };
-
-        println!("Connected to ip {node_ip} and port: {node_port}");
+        
+        println!("CONNECTED to ip {} and port: {}", node_ip, node_port);
 
         self.save_shard_client(node_port.to_string(), shard_client);
         self.set_health_connection(node_ip.as_str(), node_port.as_str());
@@ -461,6 +511,17 @@ impl NodeRole for Router {
 
         print_query_response(response.clone());
         Some(response)
+    }
+
+    fn stop(&mut self) {
+        match self.stopped.lock() {
+            Ok(mut stopped) => {
+                *stopped = true;
+            }
+            Err(_) => {
+                eprintln!("Failed to stop router");
+            }
+        }
     }
 }
 
