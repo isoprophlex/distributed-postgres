@@ -19,12 +19,9 @@ pub struct LocalNode {
     pub unavailable_memory_perc: f64,
 }
 
-pub fn get_nodes_config(config_file_path: Option<&str>) -> NodesConfig {
+pub fn get_nodes_config() -> NodesConfig {
     // read from 'config.yaml' to get the NodeConfig
-    let config_file_path = match config_file_path {
-        Some(path) => path,
-        None => "../../../sharding/src/node/config/nodes_config.yaml",
-    };
+    let config_file_path = "../../../sharding/src/node/config/nodes_config.yaml";
 
     let config_content =
         fs::read_to_string(config_file_path).expect("Should have been able to read the file");
@@ -32,12 +29,9 @@ pub fn get_nodes_config(config_file_path: Option<&str>) -> NodesConfig {
     serde_yaml::from_str(&config_content).expect("Should have been able to parse the YAML")
 }
 
-pub fn get_nodes_config_raft(config_file_path: Option<&str>) -> raft::node_config::NodesConfig {
+pub fn get_nodes_config_raft() -> raft::node_config::NodesConfig {
     // read from 'config.yaml' to get the NodeConfig from raft
-    let config_file_path = match config_file_path {
-        Some(path) => path,
-        None => "../../../sharding/src/node/config/nodes_config.yaml",
-    };
+    let config_file_path ="../../../sharding/src/node/config/nodes_config.yaml";
 
     let config_content =
         fs::read_to_string(config_file_path).expect("Should have been able to read the file");
