@@ -53,36 +53,36 @@ impl Router {
 
         let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
 
-        let router = match shared_router.lock() {
-            Ok(shared_router) => shared_router,
-            Err(_) => {
-                eprintln!("Failed to get shared router");
-                return;
-            }
-        };
-
         println!("wait_for_client");
+
         loop {
-            let stopped = match router.stopped.lock() {
-                Ok(stopped) => stopped,
-                Err(_) => {
-                    eprintln!("Failed to get stopped status");
-                    return;
-                }
+            let stopped = {
+                let router = match shared_router.lock() {
+                    Ok(shared_router) => shared_router,
+                    Err(_) => {
+                        eprintln!("Failed to get shared router");
+                        return;
+                    }
+                };
+
+                let router_lock = match router.stopped.lock() {
+                    Ok(stopped) => *stopped,
+                    Err(_) => {
+                        eprintln!("Failed to get stopped status");
+                        return;
+                    }
+                }; router_lock
             };
 
-            if *stopped {
+            if stopped {
                 println!("Stopped is true");
                 drop(listener);
                 return;
             }
 
-            match listener.set_nonblocking(true) {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("Failed to set listener to non-blocking: {}", e);
-                    return;
-                }
+            if let Err(e) = listener.set_nonblocking(true) {
+                eprintln!("Failed to set listener to non-blocking: {}", e);
+                return;
             }
 
             match listener.accept() {
@@ -91,59 +91,63 @@ impl Router {
                         "{color_bright_green}[ROUTER] New connection accepted from {addr}.{style_reset}"
                     );
 
-                    // Start listening for incoming messages in a thread
                     let router_clone = shared_router.clone();
                     let shareable_stream = Arc::new(Mutex::new(stream));
                     let stream_clone = Arc::clone(&shareable_stream);
 
-                    let _handle = thread::spawn(move || {
+                    thread::spawn(move || {
                         println!("Inside thread in wait_for_client");
                         Router::listen(&router_clone, &stream_clone);
                     });
                 }
                 Err(e) => {
-                    // No connection yet, ignore
+                    if e.kind() != std::io::ErrorKind::WouldBlock {
+                        eprintln!("Failed to accept connection: {}", e);
+                    }
                 }
             }
+
         }
     }
 
+
     // Listen for incoming messages
     pub fn listen(shared_router: &Arc<Mutex<Router>>, stream: &Arc<Mutex<TcpStream>>) {
-        let router = match shared_router.lock() {
-            Ok(shared_router) => shared_router,
-            Err(_) => {
-                eprintln!("Failed to get shared router");
-                return;
-            }
-        };
-
         loop {
-            let stopped = match router.stopped.lock() {
-                Ok(stopped) => stopped,
-                Err(_) => {
-                    eprintln!("Failed to get stopped status");
-                    return;
-                }
+            // Adquiere el bloqueo del router para verificar el estado 'stopped'
+            let stopped = {
+                let router = match shared_router.lock() {
+                    Ok(router) => router,
+                    Err(_) => {
+                        eprintln!("Failed to get shared router");
+                        return;
+                    }
+                };
+
+                // Verifica el estado 'stopped' y suelta el bloqueo del router
+                let router_clone = *router.stopped.lock().unwrap(); router_clone
             };
 
-            if *stopped {
+            if stopped {
                 println!("Stopped is true");
                 return;
             }
 
-            println!("LOOPING listen");
-            // sleep for 1 millisecond to allow the stream to be ready to read
+            // Espera brevemente para permitir que el stream esté listo para leer
             thread::sleep(std::time::Duration::from_millis(1));
             let mut buffer = [0; 1024];
 
-            let mut stream = stream.lock().unwrap();
-
-            match stream.set_read_timeout(Some(std::time::Duration::new(10, 0))) {
-                Ok(()) => {}
-                Err(_e) => {
+            // Adquiere el bloqueo del stream y establece el tiempo de espera de lectura
+            let mut stream = match stream.lock() {
+                Ok(stream) => stream,
+                Err(_) => {
+                    eprintln!("Failed to lock stream");
                     continue;
                 }
+            };
+
+            if let Err(_) = stream.set_read_timeout(Some(std::time::Duration::new(10, 0))) {
+                continue;
             }
 
             match stream.read(&mut buffer) {
@@ -152,20 +156,29 @@ impl Router {
                         continue;
                     }
 
+                    // Convierte el buffer a String
                     let message_string = String::from_utf8_lossy(&buffer);
-                    let mut router = shared_router.lock().unwrap();
-                    if let Some(response) = router.get_response_message(&message_string) {
-                            stream.write_all(response.as_bytes()).unwrap();
-                    } else {
-                            // do nothing
+
+                    // Adquiere el bloqueo del router para obtener y enviar la respuesta
+                    let response = {
+                        let mut router = shared_router.lock().unwrap();
+                        router.get_response_message(&message_string).clone()
+                    };
+
+                    if let Some(response) = response {
+                        // Envía la respuesta a través del stream (ya está bloqueado)
+                        if let Err(e) = stream.write_all(response.as_bytes()) {
+                            eprintln!("Failed to send response: {:?}", e);
+                        }
                     }
                 }
-                Err(_e) => {
-                    // could not read from the stream, ignore
+                Err(_) => {
+                    // No se pudo leer del stream, ignóralo
                 }
             }
         }
     }
+
 
     fn get_response_message(&mut self, message: &str) -> Option<String> {
         if message.is_empty() {
