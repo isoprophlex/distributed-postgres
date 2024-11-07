@@ -94,7 +94,7 @@ impl Shard {
         let shard = match shared_shard.lock() {
             Ok(shared_router) => shared_router,
             Err(_) => {
-                eprintln!("Failed to get shared router");
+                eprintln!("Failed to get shared shard");
                 drop(listener);
                 return;
             }
@@ -167,10 +167,11 @@ impl Shard {
             }
         };
         
-        match stream.set_read_timeout(Some(std::time::Duration::new(10, 0))) {
-            Ok(_) => {}
-            Err(_e) => {
-                println!("Failed to set read timeout");
+        match stream.set_nonblocking(true) {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!("Failed to set stream to non-blocking: {e}");
+                return;
             }
         }
 
