@@ -255,6 +255,9 @@ fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
 }
 
 fn init_router(ip: &str, port: &str) {
+    // sleep for 5 seconds to allow the stream to be ready to read
+    thread::sleep(std::time::Duration::from_secs(5));
+
     let router = Router::new(ip, port);
 
     unsafe {
