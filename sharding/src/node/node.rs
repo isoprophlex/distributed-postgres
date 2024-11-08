@@ -102,15 +102,16 @@ pub extern "C" fn init_node_instance(
         return;
     }
     
-    let (transmitter, receiver): (Sender<bool>, Receiver<bool>) = mpsc::channel();
+    let (raft_transmitter, self_receiver): (Sender<bool>, Receiver<bool>) = mpsc::channel();
+    let (self_transmitter, raft_receiver): (Sender<bool>, Receiver<bool>) = mpsc::channel();
 
-    run_raft(ip.to_string(), found_port, transmitter);
-    listen_raft_receiver(receiver);
+    run_raft(ip.to_string(), found_port, raft_transmitter, raft_receiver);
+    listen_raft_receiver(self_receiver, self_transmitter);
 }
 
 // MARK: Raft
 
-fn run_raft(ip: String, port: String, transmitter: Sender<bool>) {
+fn run_raft(ip: String, port: String, transmitter: Sender<bool>, receiver: Receiver<bool>) {
     thread::spawn(move || {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
@@ -121,6 +122,7 @@ fn run_raft(ip: String, port: String, transmitter: Sender<bool>) {
                         ip,
                         port,
                         transmitter,
+                        receiver
                     )
                     .await;
                 });
@@ -133,6 +135,7 @@ async fn new_raft_instance(
     ip: String,
     port: String,
     transmitter: Sender<bool>,
+    receiver: Receiver<bool>
 ) {
     // Iterate over nodes and find the name of the one that matches ip and port:
     let nodes = get_nodes_config_raft();
@@ -156,20 +159,22 @@ async fn new_raft_instance(
         .start(
             nodes,
             Some(&format!("../../../sharding/init_history/init_{}", node_id)),
-            transmitter
+            transmitter,
+            receiver,
+            true
         )
         .await;
 }
 
 // MARK: Node Role
 
-fn listen_raft_receiver(receiver: Receiver<bool>) {
+fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
     thread::spawn(move || {
         loop {
             match receiver.recv() {
                 Ok(stopped) => {
                     let role = if stopped { NodeType::Router } else { NodeType::Shard };
-                    match change_role(role.to_owned()) {
+                    match change_role(role.to_owned(), transmitter.clone()) {
                         Ok(_) => {
                             println!("Role changing finished succesfully");
                         }
@@ -186,8 +191,7 @@ fn listen_raft_receiver(receiver: Receiver<bool>) {
     });
 }
 
-fn change_role(new_role: NodeType) -> Result<(), Error> {
-
+fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Error> {
     println!("Changing role to {:?}", new_role);
     
     if new_role == NodeType::Client {
@@ -242,6 +246,9 @@ fn change_role(new_role: NodeType) -> Result<(), Error> {
     }
 
     println!("AFTER CHANGING current instance");
+    transmitter
+        .send(true)
+        .expect("Error sending true to raft transmitter");
     Ok(())
 }
 
@@ -256,7 +263,7 @@ fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
 
 fn init_router(ip: &str, port: &str) {
     // sleep for 5 seconds to allow the stream to be ready to read
-    thread::sleep(std::time::Duration::from_secs(5));
+    //thread::sleep(std::time::Duration::from_secs(5));
 
     let router = Router::new(ip, port);
 

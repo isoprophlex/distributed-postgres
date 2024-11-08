@@ -203,11 +203,11 @@ impl Shard {
 
             // println!("After stream lock");
 
-            match stream.set_read_timeout(Some(std::time::Duration::new(10, 0))) {
+            match stream.set_nonblocking(true) {
                 Ok(()) => {}
-                Err(_e) => {
-                    println!("Failed to set read timeout");
-                    continue;
+                Err(e) => {
+                    eprintln!("Failed to set stream to non-blocking: {e}");
+                    return;
                 }
             }
 
