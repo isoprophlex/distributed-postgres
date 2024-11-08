@@ -193,15 +193,15 @@ impl Router {
             }
         };
 
-        if message.get_message_type() == MessageType::Query {
-            self.handle_query_message(&message)
-        } else {
-            eprintln!(
-                "Message type received: {:?}, not yet implemented",
-                message.get_message_type()
-            );
-
-            None
+        match message.get_message_type() {
+            MessageType::Query => self.handle_query_message(&message),
+            _ => {
+                eprintln!(
+                    "Message type received: {:?}, not yet implemented",
+                    message.get_message_type()
+                );
+                None
+            }
         }
     }
 

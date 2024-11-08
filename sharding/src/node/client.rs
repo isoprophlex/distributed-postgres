@@ -17,35 +17,52 @@ use crate::{
 /// This struct represents the Client node in the distributed system.
 /// It finds the router and connects to it to send queries.
 #[repr(C)]
-#[derive(Clone)]
 pub struct Client {
     router_postgres_client: Channel,
     client_info: NodeInfo,
+    nodes: NodesConfig
 }
 
 impl Client {
     /// Creates a new Client node with the given port
     pub fn new(ip: &str, port: &str) -> Self {
         let config = get_nodes_config();
+        let mut stream = Self::get_router_info(get_nodes_config());
+        match stream {
+            Some(router_stream) => {
+                Client {
+                    router_postgres_client: Channel {
+                        stream: Arc::new(Mutex::new(router_stream)),
+                    },
+                    client_info: NodeInfo {
+                        ip: ip.to_string(),
+                        port: port.to_string(),
+                    },
+                    nodes: config
+                }
+            }
+            None => {
+                eprintln!("No valid router found in the config. Terminating.");
+                panic!("Failed to establish a router connection");
+            }
+        }
+
+
+
+    }
+    pub fn get_router_info(config: NodesConfig) -> Option<TcpStream> {
         let mut candidate_ip;
         let mut candidate_port;
-
         for node in config.nodes {
             candidate_ip = node.ip.clone();
             candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
-
-            // This shouldn't happen, but just in case
-            if (&candidate_ip == ip) && (&candidate_port.to_string() == port) {
-                continue;
-            }
-
             let mut candidate_stream =
                 match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
                     Ok(stream) => {
                         println!(
-                    "{color_bright_green}Health connection established with {}:{}{style_reset}",
-                    candidate_ip, candidate_port
-                );
+                            "{color_bright_green}Health connection established with {}:{}{style_reset}",
+                            candidate_ip, candidate_port
+                        );
                         stream
                     }
                     Err(e) => {
@@ -53,17 +70,14 @@ impl Client {
                         continue;
                     }
                 };
-
             let message = message::Message::new_get_router();
             candidate_stream
                 .write_all(message.to_string().as_bytes())
                 .unwrap();
-
             let response: &mut [u8] = &mut [0; 1024];
             candidate_stream
                 .set_read_timeout(Some(std::time::Duration::from_secs(10)))
                 .unwrap();
-
             match candidate_stream.read(response) {
                 Ok(_) => {
                     let response_str = String::from_utf8_lossy(response);
@@ -89,25 +103,13 @@ impl Client {
                                     panic!("Failed to connect to the router");
                                 }
                             };
-
-                        return Client {
-                            router_postgres_client: Channel {
-                                stream: Arc::new(Mutex::new(router_stream)),
-                            },
-                            client_info: NodeInfo {
-                                ip: ip.to_string(),
-                                port: port.to_string(),
-                            },
-                        };
+                        return Some(router_stream)
                     }
                 }
-                Err(_e) => {
-                    continue;
-                }
+                _ => {}
             }
         }
-
-        panic!("No valid router found in the config");
+        None
     }
 
     fn handle_received_message(buffer: &mut [u8]) {
@@ -130,6 +132,8 @@ impl NodeRole for Client {
             "{color_bright_blue}Sending query to router: {}{style_reset}",
             query
         );
+
+        // Intentar obtener el stream actual
         let mut stream = match self.router_postgres_client.stream.lock() {
             Ok(stream) => stream,
             Err(e) => {
@@ -137,35 +141,65 @@ impl NodeRole for Client {
                 return None;
             }
         };
-        println!(
-            "{color_bright_blue}Stream locked{style_reset}"
-        );
-        match stream.write_all(message.to_string().as_bytes()) {
-            Ok(_) => {
-                println!(
-                    "{color_bright_blue}Query sent to router{style_reset}"
-                );
-            }
-            Err(e) => {
-                eprintln!("Failed to send the query: {:?}", e);
-                return None;
-            }
-        }
 
-        // Si se cayó el router, volver a comunicarse con los nodos y pedir información de router
+        println!("{color_bright_blue}Stream locked{style_reset}");
 
-        let mut buffer: [u8; 1024] = [0; 1024];
+        // Intentar enviar el mensaje y reconectar si falla
+        if let Err(e) = stream.write_all(message.to_string().as_bytes()) {
+            eprintln!("Failed to send the query: {:?}", e);
+            eprintln!("Reconnecting to new router...");
+            drop(stream);
+            // Obtener un nuevo router y actualizar el canal
+            if let Some(new_stream) = Self::get_router_info(get_nodes_config()) {
+                self.router_postgres_client = Channel {
+                    stream: Arc::new(Mutex::new(new_stream)),
+                };
+                stream = match self.router_postgres_client.stream.lock() {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        eprintln!("Failed to lock the new stream: {:?}", e);
+                        return None;
+                    }
+                };
 
-        match stream.read(&mut buffer) {
-            Ok(chars) => {
-                if chars == 0 {
+                // Reintentar el envío con el nuevo router
+                if let Err(e) = stream.write_all(message.to_string().as_bytes()) {
+                    eprintln!("Failed to send query after reconnecting: {:?}", e);
                     return None;
                 }
+                println!("{color_bright_blue}Query sent to new router{style_reset}");
+            } else {
+                eprintln!("No valid router found during reconnection.");
+                return None;
+            }
+        } else {
+            println!("{color_bright_blue}Query sent to router{style_reset}");
+        }
 
+        // Preparar el buffer de respuesta
+        let mut buffer: [u8; 1024] = [0; 1024];
+
+        // Intentar leer la respuesta y reconectar si falla
+        match stream.read(&mut buffer) {
+            Ok(chars) if chars > 0 => {
                 Client::handle_received_message(&mut buffer);
                 Some(String::new())
             }
-            Err(_e) => None,
+            Ok(_) | Err(_) => {
+                eprintln!("Failed to read response or empty response received.");
+                eprintln!("Reconnecting to new router...");
+                drop(stream);
+                // Obtener un nuevo router y actualizar el canal
+                if let Some(new_stream) = Self::get_router_info(get_nodes_config()) {
+                    self.router_postgres_client = Channel {
+                        stream: Arc::new(Mutex::new(new_stream)),
+                    };
+                    println!("{color_bright_green}Reconnected to new router{style_reset}");
+                } else {
+                    eprintln!("No valid router found during reconnection.");
+                }
+                None
+            }
         }
     }
 
@@ -173,3 +207,5 @@ impl NodeRole for Client {
         // Not implemented
     }
 }
+
+
