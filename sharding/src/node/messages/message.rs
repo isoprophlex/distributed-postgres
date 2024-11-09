@@ -162,7 +162,7 @@ impl Message {
 
     pub fn get_data(&self) -> MessageData {
         match self.message_type {
-            MessageType::InitConnection | MessageType::RouterId => {
+            MessageType::InitConnection | MessageType::RouterId | MessageType::HelloFromNode => {
                 if let Some(ref node_info) = self.node_info {
                     MessageData::new_node_info(node_info.clone())
                 } else {

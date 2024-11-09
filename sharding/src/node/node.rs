@@ -285,8 +285,8 @@ fn init_router(ip: &str, port: &str) {
     let ip_clone = ip.to_string();
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
-        Router::wait_for_client(&shared_router, ip_clone, port_clone);
-        println!("Router comes back from wait_for_client");
+        Router::wait_for_incomming_connections(&shared_router, ip_clone, port_clone);
+        println!("Router comes back from wait_for_incomming_connections");
     });
 
     println!("Router node initializes");

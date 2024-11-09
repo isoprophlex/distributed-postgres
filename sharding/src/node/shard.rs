@@ -3,9 +3,10 @@ use super::messages::message::{Message, MessageType};
 use super::messages::node_info::NodeInfo;
 use super::node::NodeRole;
 use super::tables_id_info::TablesIdInfo;
+use crate::node::messages::message;
 use crate::node::shard;
 use crate::utils::common::{connect_to_node, ConvertToString};
-use crate::utils::node_config::get_memory_config;
+use crate::utils::node_config::{get_memory_config, get_nodes_config};
 use crate::utils::queries::print_rows;
 use indexmap::IndexMap;
 use inline_colorization::*;
@@ -83,11 +84,53 @@ impl Shard {
         MemoryManager::new(reserved_memory)
     }
 
+    pub fn look_for_sharding_network(ip: &str, port: &str) {
+        println!("Checking if there's a sharding network ...");
+
+        let config = get_nodes_config();
+        let mut candidate_ip;
+        let mut candidate_port;
+
+        for node in config.nodes {
+            candidate_ip = node.ip.clone();
+            candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
+
+            // Ignore self
+            if (&candidate_ip == ip) && (&candidate_port.to_string() == port) {
+                continue;
+            }
+
+            let mut candidate_stream =
+                match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
+                    Ok(stream) => {
+                        println!(
+                            "{color_bright_green}Health connection established with {}:{}{style_reset}",
+                            candidate_ip, candidate_port
+                        );
+                        stream
+                    }
+                    Err(_) => {
+                        continue;
+                    }
+                };
+
+            let hello_message = message::Message::new_hello_from_node(NodeInfo { ip: ip.to_string(), port: port.to_string() });
+            println!("{color_bright_green}Sending HelloFromNode message to {candidate_ip}:{candidate_port}{style_reset}");
+
+            candidate_stream
+                .write_all(hello_message.to_string().as_bytes())
+                .unwrap();
+        }
+    }
+
     pub fn accept_connections(shared_shard: Arc<Mutex<Shard>>, ip: String, accepting_port: String) {
         let port = accepting_port.parse::<u64>().unwrap() + 1000;
         println!("Attempting to bind listener to port: {}", port);
 
         let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
+
+        // After binding a listener, look for an ongoing sharding network live
+        Shard::look_for_sharding_network(&ip, &accepting_port);
 
         let mut handles: Vec<JoinHandle<()>> = Vec::new();
 
@@ -132,10 +175,7 @@ impl Shard {
 
             match listener.accept() {
                 Ok((stream, addr)) => {
-                    println!(
-                        "{color_bright_green}[SHARD] New connection accepted from {addr}.{style_reset}",
-                    );
-
+                    
                     // Start listening for incoming messages in a thread
                     let shard_clone = shared_shard.clone();
                     let shareable_stream = Arc::new(Mutex::new(stream));
@@ -145,10 +185,11 @@ impl Shard {
                     let _handle = thread::spawn(move || {
                         println!("Inside thread spawn on accept_connections");
                         Shard::listen(&shard_clone, &stream_clone, stopped_clone);
+                        println!("Listening thread finished");
                     });
                     handles.push(_handle);
                 }
-                Err(e) => {
+                Err(_) => {
                     // continue if there are no incoming connections
                 }
             }
@@ -219,8 +260,6 @@ impl Shard {
                     }
 
                     let message_string = String::from_utf8_lossy(&buffer);
-                    println!("{color_bright_green}Received message: {message_string}{style_reset}");
-
                     let mut shard = match shared_shard.lock() {
                         Ok(shared_shard) => shared_shard,
                         Err(_) => {
@@ -228,13 +267,27 @@ impl Shard {
                             continue;
                         }
                     };
+
+                    if message_string.is_empty() {
+                        continue;
+                    }
+
+                    let message = match Message::from_string(&message_string) {
+                        Ok(message) => message,
+                        Err(e) => {
+                            eprintln!("Failed to parse message: {e:?}. Message: [{message_string:?}]");
+                            continue;
+                        }
+                    };
+
+                    if shard.no_need_for_connection(message.to_owned()) {
+                        return;
+                    }
                     
-                    if let Some(response) = shard.get_response_message(&message_string) {
+                    if let Some(response) = shard.get_response_message(message) {
+                        println!("{color_bright_green}Received message: {message_string}{style_reset}");
                         println!("{color_bright_green}Sending response: {response}{style_reset}");
-                        // stream.write(response.as_bytes()).unwrap();
                         stream.write_all(response.as_bytes()).unwrap();
-                    } else {
-                        // do nothing
                     }
                 }
                 Err(_e) => {
@@ -244,23 +297,18 @@ impl Shard {
         }
     }
 
-    fn get_response_message(&mut self, message: &str) -> Option<String> {
-        if message.is_empty() {
-            return None;
-        }
+    // Shards may also receive a "HelloFromNode" message from other nodes. This message is used to establish a connection with the router.
+    // So, if a shard receives a "HelloFromNode" message, it should not respond and the stream should be closed.
+    fn no_need_for_connection(&self, message: Message) -> bool {
+        message.get_message_type() == MessageType::HelloFromNode
+    }
 
-        let message = match Message::from_string(message) {
-            Ok(message) => message,
-            Err(e) => {
-                eprintln!("Failed to parse message: {e:?}. Message: [{message:?}]");
-                return None;
-            }
-        };
-
+    fn get_response_message(&mut self, message: Message) -> Option<String> {
         match message.get_message_type() {
             MessageType::InitConnection => self.handle_init_connection_message(message),
             MessageType::AskMemoryUpdate => self.handle_memory_update_message(),
             MessageType::GetRouter => self.handle_get_router_message(),
+            MessageType::HelloFromNode => None,
             _ => {
                 eprintln!(
                     "Message type received: {:?}, not yet implemented",
@@ -385,7 +433,12 @@ impl Shard {
 
 impl NodeRole for Shard {
     fn send_query(&mut self, query: &str) -> Option<String> {
-        println!("{color_bright_green}Sending query to the database: {query}{style_reset}");
+        if query == "whoami;" {
+            println!("{color_bright_green}> I am Shard: {}:{}{style_reset}\n", self.ip, self.port);
+            return None;
+        }
+
+        println!("{color_bright_green}Sending query to the shard database: ({query}){style_reset}");
         let rows = self.get_rows_for_query(query)?;
         let _ = self.update(); // Updates memory and tables_max_id
         Some(rows.convert_to_string())

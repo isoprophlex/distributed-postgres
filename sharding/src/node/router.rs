@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
 use postgres::{Client as PostgresClient, Row};
 extern crate users;
+use super::messages::node_info::find_name_for_node;
 use super::node::NodeRole;
 use super::shard_manager::ShardManager;
 use super::tables_id_info::TablesIdInfo;
@@ -46,14 +47,14 @@ impl Router {
         Router::initialize_router_with_connections(ip, port)
     }
 
-    /// Listen for incoming connections from clients.
-    pub fn wait_for_client(shared_router: &Arc<Mutex<Router>>, ip: String, waiting_port: String) {
+    /// Listen for incoming connections from clients or new shards.
+    pub fn wait_for_incomming_connections(shared_router: &Arc<Mutex<Router>>, ip: String, waiting_port: String) {
         let port = waiting_port.parse::<u64>().unwrap() + 1000;
         println!("Attempting to bind listener to port: {}", port);
 
         let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
 
-        println!("wait_for_client");
+        println!("wait_for_incomming_connections");
 
         loop {
             let stopped = {
@@ -71,7 +72,8 @@ impl Router {
                         eprintln!("Failed to get stopped status");
                         return;
                     }
-                }; router_lock
+                };
+                router_lock
             };
 
             if stopped {
@@ -187,14 +189,15 @@ impl Router {
 
         let message = match Message::from_string(message) {
             Ok(message) => message,
-            Err(e) => {
-                eprintln!("Failed to parse message: {e:?}. Message: [{message:?}]");
+            Err(_) => {
                 return None;
             }
         };
 
         match message.get_message_type() {
             MessageType::Query => self.handle_query_message(&message),
+            MessageType::GetRouter => self.handle_get_router_message(),
+            MessageType::HelloFromNode => self.handle_hello_from_node_message(&message),
             _ => {
                 eprintln!(
                     "Message type received: {:?}, not yet implemented",
@@ -209,11 +212,37 @@ impl Router {
         let query = message.get_data().query.unwrap();
         let Some(response) = self.send_query(&query) else {
             eprintln!("Failed to send query to shards");
-            return None;
+            let response_message = Message::new_query_response("".to_string());
+            return Some(response_message.to_string());
         };
         let response_message = Message::new_query_response(response);
-
         Some(response_message.to_string())
+    }
+
+    fn handle_get_router_message(&mut self) -> Option<String> {
+        println!("{color_bright_green}Received a GetRouter message{style_reset}");
+        let self_clone = self.clone();
+        let ip = self_clone.ip.clone().to_string();
+        let port = self_clone.port.clone().to_string();
+        let router_info: NodeInfo = NodeInfo { ip, port};
+
+        let response_message = Message::new_router_id(router_info.clone());
+        Some(response_message.to_string())
+    }
+
+    fn handle_hello_from_node_message(&mut self, message: &Message) -> Option<String> {
+        println!("Received HelloFromNode message");
+        let node_info = match message.get_data().node_info {
+            Some(node_info) => node_info,
+            None => {
+                eprintln!("Failed to get node info from message");
+                return None;
+            }
+        };
+        if let Some(name) = find_name_for_node(&node_info) { 
+            self.configure_shard_connection_to(Node { ip: node_info.ip, port: node_info.port, name: name });
+        }
+        Some("OK".to_string())
     }
 
     /// Initializes the Router node with connections to the shards specified in the configuration file.
@@ -221,7 +250,6 @@ impl Router {
         ip: &str,
         port: &str,
     ) -> Router {
-        let config = get_nodes_config();
         let shards: IndexMap<String, PostgresClient> = IndexMap::new();
         let comm_channels: IndexMap<String, Channel> = IndexMap::new();
         let shard_manager = ShardManager::new();
@@ -291,7 +319,7 @@ impl Router {
         }
         Ok(())
     }
-
+    
     /// Saves the communication channel to the shard with the given shard id as key.
     fn save_comm_channel(&mut self, shard_id: String, channel: Channel) {
         let mut comm_channels = self.comm_channels.write().unwrap();
@@ -344,9 +372,7 @@ impl Router {
     fn handle_response(&mut self, response_message: &Message, node_port: &str) -> bool {
         match response_message.get_message_type() {
             MessageType::Agreed => self.handle_agreed_message(&response_message.clone(), node_port),
-            MessageType::MemoryUpdate => {
-                self.handle_memory_update_message(&response_message.clone(), node_port)
-            }
+            MessageType::MemoryUpdate => self.handle_memory_update_message(&response_message.clone(), node_port),
             _ => {
                 println!("{color_red}Shard {node_port} denied the connection{style_reset}");
                 false
@@ -506,6 +532,11 @@ impl Router {
 
 impl NodeRole for Router {
     fn send_query(&mut self, received_query: &str) -> Option<String> {
+        if received_query == "whoami;" {
+            println!("> I am Router: {}:{}\n", self.ip, self.port);
+            return None;
+        }
+
         println!("Router send_query called with query: {received_query:?}");
 
         let (shards, is_insert, query) = self.get_data_needed_from(received_query);

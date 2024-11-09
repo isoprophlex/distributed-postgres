@@ -231,9 +231,13 @@ pub fn print_rows(rows: Vec<Row>) {
     print_query_response(response);
 }
 
-pub fn print_query_response(reponse: String) {
+pub fn print_query_response(response: String) {
+    if response.is_empty() {
+        println!("\n");
+        return;
+    }
     // Split by \n and print each line
-    for line in reponse.split('\0') {
+    for line in response.split('\0') {
         if line.is_empty() {
             continue;
         }

@@ -20,14 +20,16 @@ use crate::{
 pub struct Client {
     router_postgres_client: Channel,
     client_info: NodeInfo,
-    nodes: NodesConfig
+    nodes: NodesConfig,
+    ip: String,
+    port: String,
 }
 
 impl Client {
     /// Creates a new Client node with the given port
     pub fn new(ip: &str, port: &str) -> Self {
         let config = get_nodes_config();
-        let mut stream = Self::get_router_info(get_nodes_config());
+        let stream = Self::get_router_info(get_nodes_config());
         match stream {
             Some(router_stream) => {
                 Client {
@@ -38,7 +40,9 @@ impl Client {
                         ip: ip.to_string(),
                         port: port.to_string(),
                     },
-                    nodes: config
+                    nodes: config,
+                    ip: ip.to_string(),
+                    port: port.to_string(),
                 }
             }
             None => {
@@ -114,7 +118,12 @@ impl Client {
 
     fn handle_received_message(buffer: &mut [u8]) {
         let message_string = String::from_utf8_lossy(&buffer);
-        let response_message = message::Message::from_string(&message_string).unwrap();
+        let response_message = match message::Message::from_string(&message_string) {
+            Ok(message) => message,
+            Err(e) => {
+                return;
+            }
+        };
 
         if response_message.get_message_type() == message::MessageType::QueryResponse {
             let rows = response_message.get_data().query.unwrap();
@@ -125,6 +134,12 @@ impl Client {
 
 impl NodeRole for Client {
     fn send_query(&mut self, query: &str) -> Option<String> {
+        if query == "whoami;" {
+            println!("> I am Client: {}:{}\n", self.ip, self.port);
+            return None;
+        }
+
+        println!("Sending query from client");
         let message =
             message::Message::new_query(Some(self.client_info.clone()), query.to_string());
 
