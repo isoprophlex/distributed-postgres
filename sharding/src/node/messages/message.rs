@@ -15,6 +15,7 @@ pub enum MessageType {
     Denied,
     GetRouter,
     RouterId,
+    HelloFromNode,
     NoRouterData,
     Query,
     QueryResponse,
@@ -117,6 +118,16 @@ impl Message {
         }
     }
 
+    pub fn new_hello_from_node(node_info: NodeInfo) -> Self {
+        Message {
+            message_type: MessageType::HelloFromNode,
+            payload: None,
+            max_ids: None,
+            node_info: Some(node_info),
+            query_data: None,
+        }
+    }
+
     pub fn new_no_router_data() -> Self {
         Message {
             message_type: MessageType::NoRouterData,
@@ -211,6 +222,7 @@ impl Message {
             MessageType::Denied => "DENIED",
             MessageType::GetRouter => "GET_ROUTER",
             MessageType::RouterId => "ROUTER_ID",
+            MessageType::HelloFromNode => "HELLO_FROM_NODE",
             MessageType::NoRouterData => "NO_ROUTER_DATA",
             MessageType::Query => "QUERY",
             MessageType::QueryResponse => "QUERY_RESPONSE",
@@ -269,6 +281,7 @@ impl Message {
             Some("DENIED") => MessageType::Denied,
             Some("GET_ROUTER") => MessageType::GetRouter,
             Some("ROUTER_ID") => MessageType::RouterId,
+            Some("HELLO_FROM_NODE") => MessageType::HelloFromNode,
             Some("NO_ROUTER_DATA") => MessageType::NoRouterData,
             Some("QUERY") => MessageType::Query,
             Some("QUERY_RESPONSE") => MessageType::QueryResponse,
