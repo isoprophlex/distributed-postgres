@@ -179,7 +179,7 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                             println!("Role changing finished succesfully");
                         }
                         Err(_) => {
-                            println!("Error changing role to {:?}", role);
+                            println!("Error could not change role to {:?}", role);
                         }
                     }
                 }
@@ -208,6 +208,7 @@ fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Erro
 
     if node_instance.node_type == new_role {
         println!("NodeRole is already {:?}", new_role);
+        confirm_role_change(transmitter);
         return Ok(());
     }
 
@@ -246,10 +247,14 @@ fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Erro
     }
 
     println!("AFTER CHANGING current instance");
+    confirm_role_change(transmitter);
+    Ok(())
+}
+
+fn confirm_role_change(transmitter: Sender<bool>) {
     transmitter
         .send(true)
         .expect("Error sending true to raft transmitter");
-    Ok(())
 }
 
 fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
