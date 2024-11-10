@@ -456,7 +456,12 @@ impl Router {
         println!("ID NOT FOUND in query.");
         if query_is_insert(query) {
             println!("Query is INSERT");
-            let shard = self.shard_manager.peek().unwrap();
+            let shard = match self.shard_manager.peek() {
+                Some(shard) => shard,
+                None => {
+                    return ([].to_vec(), false, query.to_string());
+                }
+            };
             (vec![shard.clone()], true, query.to_string())
         } else {
             // Return all shards
@@ -549,9 +554,15 @@ impl NodeRole for Router {
 
         println!("Shards: {shards:?}, is_insert: {is_insert}, query: {query}");
 
+        // If there are no shards available, the router uses its own backend to execute the query
         if shards.is_empty() {
-            eprintln!("No shards found for the query");
-            return None;
+            let response = match self.send_query_to_backend(received_query) {
+                Some(response) => response,
+                None => {
+                    return None;
+                }
+            };
+            return Some(response);
         }
 
         let mut shards_responses: IndexMap<String, Vec<Row>> = IndexMap::new();
@@ -670,6 +681,12 @@ impl Router {
         }
         eprintln!("Shard {shard_id:?} not found");
         Vec::new()
+    }
+
+    fn send_query_to_backend(&mut self, query: &str) -> Option<String> {
+        println!("{color_bright_green}Sending query to the router database: ({query}){style_reset}");
+        let rows = self.get_rows_for_query(query)?;
+        Some(rows.convert_to_string())
     }
 }
 

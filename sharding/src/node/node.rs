@@ -37,9 +37,6 @@ pub trait NodeRole {
     fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
         match self.backend().as_ref().try_lock().unwrap().query(query, &[]) {
             Ok(rows) => {
-                if rows.is_empty() {
-                    return None;
-                }
                 print_rows(rows.clone());
                 Some(rows)
             }
