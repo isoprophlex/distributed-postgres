@@ -123,8 +123,12 @@ trait ConvertToStringOffset {
     fn convert_to_string_with_offset(&self, offset: i64) -> String;
 }
 
-impl ConvertToString for Row {
-    fn convert_to_string(&self) -> String {
+pub trait ConvertRowToString {
+    fn convert_to_string(&self, separator: &str) -> String;
+}
+
+impl ConvertRowToString for Row {
+    fn convert_to_string(&self, separator: &str) -> String {
         let mut result = String::new();
         // If is empty, return empty string
         if self.is_empty() {
@@ -133,7 +137,7 @@ impl ConvertToString for Row {
         for (i, _) in self.columns().iter().enumerate() {
             // Try to get the value as a String, If it fails, try to get it as an i32. Same for f64 and Decimal
             let formatted_value = match self.try_get::<usize, String>(i) {
-                Ok(v) => format!("{}", v),
+                Ok(v) => format!("'{}'", v),
                 Err(_) => match self.try_get::<usize, i32>(i) {
                     Ok(v) => format!("{}", v),
                     Err(_) => match self.try_get::<usize, f64>(i) {
@@ -147,7 +151,7 @@ impl ConvertToString for Row {
             };
 
             result.push_str(&formatted_value);
-            result.push_str(" | ");
+            result.push_str(separator);
         }
         result
     }
@@ -210,7 +214,7 @@ impl ConvertToString for Vec<Row> {
         result.push('\n');
 
         for row in self {
-            result.push_str(&row.convert_to_string());
+            result.push_str(&row.convert_to_string(" | "));
             result.push('\n');
         }
         result

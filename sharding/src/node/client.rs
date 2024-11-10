@@ -72,7 +72,7 @@ impl Client {
                         stream
                     }
                     Err(e) => {
-                        eprintln!("Failed to connect to the node. Is there any node up?");
+                        eprintln!("Failed to connect to the node. Is there any node up?"); // Flush 
                         continue;
                     }
                 };
@@ -140,6 +140,10 @@ impl Client {
 }
 
 impl NodeRole for Client {
+    fn backend(&self) -> Arc<Mutex<postgres::Client>> {
+        panic!("Client node does not have a backend");
+    }
+
     fn send_query(&mut self, query: &str) -> Option<String> {
         if query == "whoami;" {
             println!("> I am Client: {}:{}\n", self.ip, self.port);

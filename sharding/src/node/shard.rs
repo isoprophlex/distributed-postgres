@@ -93,12 +93,14 @@ impl Shard {
 
         for node in config.nodes {
             candidate_ip = node.ip.clone();
-            candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
+            let node_port = node.port.clone().parse::<u64>().unwrap();
 
             // Ignore self
-            if (&candidate_ip == ip) && (&candidate_port.to_string() == port) {
+            if (&candidate_ip == ip) && (&node_port.to_string() == port) {
                 continue;
             }
+
+            candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
 
             let mut candidate_stream =
                 match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
@@ -382,20 +384,6 @@ impl Shard {
         self.memory_manager.as_ref().try_lock().unwrap().update()
     }
 
-    fn get_all_tables(&mut self) -> Vec<String> {
-        let query =
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
-        let Some(rows) = self.get_rows_for_query(query) else {
-            return Vec::new();
-        };
-        let mut tables = Vec::new();
-        for row in rows {
-            let table_name: String = row.get(0);
-            tables.push(table_name);
-        }
-        tables
-    }
-
     // Set the max ids for all tables in tables_max_id
     fn set_max_ids(&mut self) {
         let tables = self.get_all_tables();
@@ -413,25 +401,13 @@ impl Shard {
             }
         }
     }
-
-    fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
-        match self.backend.as_ref().try_lock().unwrap().query(query, &[]) {
-            Ok(rows) => {
-                if rows.is_empty() {
-                    return None;
-                }
-                print_rows(rows.clone());
-                Some(rows)
-            }
-            Err(e) => {
-                eprintln!("Failed to execute query: {e:?}");
-                None
-            }
-        }
-    }
 }
 
 impl NodeRole for Shard {
+    fn backend(&self) -> Arc<Mutex<postgres::Client>> {
+        self.backend.clone()
+    }
+
     fn send_query(&mut self, query: &str) -> Option<String> {
         if query == "whoami;" {
             println!("{color_bright_green}> I am Shard: {}:{}{style_reset}\n", self.ip, self.port);

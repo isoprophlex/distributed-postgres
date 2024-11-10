@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use postgres::{Client as PostgresClient, Row};
+use rust_decimal::Decimal;
 extern crate users;
 use super::messages::node_info::find_name_for_node;
 use super::node::NodeRole;
@@ -7,16 +8,11 @@ use super::shard_manager::ShardManager;
 use super::tables_id_info::TablesIdInfo;
 use crate::node::messages::message::{Message, MessageType};
 use crate::node::messages::node_info::NodeInfo;
-use crate::utils::common::{ConvertToString};
+use crate::utils::common::ConvertToString;
 use crate::utils::common::{connect_to_node, Channel};
 use crate::utils::node_config::{get_nodes_config, Node};
-use crate::utils::queries::{
-    format_query_with_new_id, format_rows_with_offset, get_id_if_exists, get_table_name_from_query,
-    print_query_response, query_affects_memory_state, query_is_insert, query_is_select,
-};
-use log::{debug, error, info};
+use crate::utils::queries::*;
 use inline_colorization::*;
-use std::f64::consts::E;
 use std::fmt::Error;
 use std::io::{Read, Write};
 use std::sync::{Arc, MutexGuard, RwLock};
@@ -38,6 +34,8 @@ pub struct Router {
     ip: Arc<str>,
     port: Arc<str>,
     pub stopped: Arc<Mutex<bool>>,
+    /// Backend for the router, only used when redistributing data
+    backend: Arc<Mutex<PostgresClient>>,
 }
 
 impl Router {
@@ -212,7 +210,7 @@ impl Router {
         let query = message.get_data().query.unwrap();
         let Some(response) = self.send_query(&query) else {
             eprintln!("Failed to send query to shards");
-            let response_message = Message::new_query_response("".to_string());
+            let response_message = Message::new_query_response("[⚠️] There are no shards available at this moment. Please try again later.".to_string());
             return Some(response_message.to_string());
         };
         let response_message = Message::new_query_response(response);
@@ -254,6 +252,8 @@ impl Router {
         let comm_channels: IndexMap<String, Channel> = IndexMap::new();
         let shard_manager = ShardManager::new();
 
+        let backend = connect_to_node(ip, port).unwrap();
+
         let mut router = Router {
             shards: Arc::new(Mutex::new(shards)),
             shard_manager: Arc::new(shard_manager),
@@ -261,10 +261,11 @@ impl Router {
             ip: Arc::from(ip),
             port: Arc::from(port),
             stopped: Arc::new(Mutex::new(false)),
+            backend: Arc::new(Mutex::new(backend)),
         };
 
         router.configure_connections();
-
+        router.redistribute_data();
         router
     }
 
@@ -530,7 +531,12 @@ impl Router {
     }
 }
 
+// MARK: - NodeRole implementation
 impl NodeRole for Router {
+    fn backend(&self) -> Arc<Mutex<postgres::Client>> {
+        self.backend.clone()
+    }
+
     fn send_query(&mut self, received_query: &str) -> Option<String> {
         if received_query == "whoami;" {
             println!("> I am Router: {}:{}\n", self.ip, self.port);
@@ -551,6 +557,7 @@ impl NodeRole for Router {
         let mut shards_responses: IndexMap<String, Vec<Row>> = IndexMap::new();
         let mut rows = Vec::new();
         for shard_id in shards {
+            // TODO-A we should add a thread here to make it parallel
             let shard_response = self.send_query_to_shard(&shard_id.clone(), &query, is_insert);
             if !shard_response.is_empty() {
                 shards_responses.insert(shard_id, shard_response.clone());
@@ -564,7 +571,7 @@ impl NodeRole for Router {
         } else {
             println!(
                 "Query is SELECT: {}, shards_responses is empty: {}",
-                query_is_insert(&query),
+                query_is_select(&query),
                 shards_responses.is_empty()
             );
             rows.convert_to_string()
@@ -586,7 +593,7 @@ impl NodeRole for Router {
     }
 }
 
-// Communication with shards
+// MARK: - Communication with shards
 impl Router {
     fn get_stream(&self, shard_id: &str) -> Option<Arc<Mutex<TcpStream>>> {
         let Ok(comm_channels) = self.comm_channels.read() else {
@@ -627,7 +634,7 @@ impl Router {
     }
 
     /// Sends a message to the shard asking for a memory update.
-    /// This must be called each time an insertion query is sent, and may be used to update the shard's memory size in the `ShardManager` in other circumstances.
+    /// This must be called each time a query is sent which affects the memory (see `query_affects_memory_state` at queries.rs), and may be used to update the shard's memory size in the `ShardManager` in other circumstances.
     fn ask_for_memory_update(&mut self, shard_id: &str) {
         let Some(stream) = self.get_stream(shard_id) else {
             eprintln!("Failed to get stream for shard {shard_id}");
@@ -645,6 +652,7 @@ impl Router {
     }
 
     fn send_query_to_shard(&mut self, shard_id: &str, query: &str, update: bool) -> Vec<Row> {
+        println!("Sending query to shard {shard_id}: {query}");
         if let Some(shard) = self.clone().shards.lock().unwrap().get_mut(shard_id) {
             let rows = match shard.query(query, &[]) {
                 Ok(rows) => rows,
@@ -662,5 +670,141 @@ impl Router {
         }
         eprintln!("Shard {shard_id:?} not found");
         Vec::new()
+    }
+}
+
+// MARK: - Data Redistribution
+impl Router {
+    fn backend_has_data(&mut self) -> bool {
+        let query = "SELECT * FROM information_schema.tables WHERE table_schema = 'public'";
+        let rows = self.get_rows_for_query(query);
+        rows.is_some()
+    }
+
+    fn redistribute_data(&mut self) {
+        if !self.backend_has_data() {
+            println!("No data found in backend. Skipping redistribution.");
+            return;
+        }
+
+        let shards = match self.shards.lock() {
+            Ok(shards) => shards,
+            Err(_) => {
+                eprintln!("Failed to get shards");
+                return;
+            }
+        };
+
+        if shards.is_empty() {
+            println!("No shards found to redistribute data. Holding on to data until shards are available.");
+            return;
+        }
+
+        // drop shard lock
+        drop(shards);
+
+        let tables = self.get_all_tables();
+
+        // Prepare data structures
+        let mut starting_queries = Vec::new();
+
+        for table in &tables {
+            // Generate CREATE TABLE query
+            let create_query = self.generate_create_table_query(table);
+            starting_queries.push(create_query);
+
+            let mut insert_queries = Vec::new();
+            // Fetch all rows from the table
+            if let Some(rows) = self.get_rows_for_query(&format!("SELECT * FROM {}", table)) {
+                // Convert each row to an INSERT query and store it
+                for row in rows {
+                    let insert_query = self.row_to_insert_query(&row, table);
+                    insert_queries.push(insert_query);
+                }
+            }
+
+            // Send queries to appropriate shards
+            for insert_query in &insert_queries {
+                let (shards, _, formatted_query) = self.get_data_needed_from(insert_query);
+
+                for shard_id in shards {
+                    // Send `starting_query` if it hasn't been sent for this table
+                    let table_starting_query = starting_queries.iter().find(|q| q.contains(table)).unwrap();
+                    self.send_query_to_shard(&shard_id, table_starting_query, false);
+                    
+                    // Send the actual insert query
+                    self.send_query_to_shard(&shard_id, &formatted_query, true);
+                }
+            }
+        }
+
+        // Drop all tables from router backend
+        self.drop_all_tables(&tables);
+    }
+
+    fn generate_create_table_query(&mut self, table: &str) -> String {
+        // Dynamically generate CREATE TABLE statement for the specified table
+        let query = format!("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{}'", table);
+        let rows = self.get_rows_for_query(&query).unwrap();
+
+        let columns_definitions: Vec<String> = rows.iter().enumerate().map(|(i,row)| {
+            let column_name: String = row.get("column_name");
+            // PostgresClient does not support getting the PrimaryKey, so all tables will have a SERIAL PRIMARY KEY called "id". If you want to fix this, be my guest
+            let data_type: String = if column_name == "id" {"SERIAL PRIMARY KEY".to_string()} else {row.get("data_type")};
+            format!("{} {}", column_name, data_type)
+        }).collect();
+
+        format!("CREATE TABLE IF NOT EXISTS {} ({})", table, columns_definitions.join(", "))
+    }
+
+    fn row_to_insert_query(&self, row: &Row, table: &str) -> String {
+        let columns = row.columns();
+        let column_names: Vec<String> = columns.iter().skip(1).map(|c| c.name().to_string()).collect();
+
+        // Convert each column value to a string using your ConvertToString trait
+        let mut result: Vec<String> = vec![];
+
+        for (i, _) in row.columns().iter().enumerate() {
+            // First column is the ID, we skip it
+            if i == 0 {
+                continue;
+            }
+            // Try to get the value as a String, If it fails, try to get it as an i32. Same for f64 and Decimal
+            let formatted_value = match row.try_get::<usize, String>(i) {
+                Ok(v) => format!("'{}'", v),
+                Err(_) => match row.try_get::<usize, i32>(i) {
+                    Ok(v) => format!("{}", v),
+                    Err(_) => match row.try_get::<usize, f64>(i) {
+                        Ok(v) => format!("{}", v),
+                        Err(_) => match row.try_get::<usize, Decimal>(i) {
+                            Ok(v) => format!("{}", v),
+                            Err(_) => String::new(),
+                        },
+                    },
+                },
+            };
+
+            result.push(formatted_value);
+        }
+        
+        let query = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            table,
+            column_names.join(", "),
+            result.join(", ")
+        );
+
+        println!("{color_bright_green}Query: {query:?}{style_reset}");
+
+        query
+    }
+
+
+    fn drop_all_tables(&mut self, tables: &[String]) {
+        for table in tables {
+            let drop_query = format!("DROP TABLE IF EXISTS {}", table);
+            let _ = self.get_rows_for_query(&drop_query);
+            println!("Dropped table {}", table);
+        }
     }
 }

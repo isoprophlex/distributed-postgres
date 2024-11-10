@@ -1,5 +1,6 @@
 use crate::node::client::Client;
 use crate::utils::node_config::get_nodes_config_raft;
+use crate::utils::queries::print_rows;
 use super::router::Router;
 use super::shard::Shard;
 use std::ffi::CStr;
@@ -7,15 +8,47 @@ use std::fmt::Error;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use postgres::Row;
 use tokio::runtime::Runtime;
 
 use tokio::task;
 use tokio::task::LocalSet;
 
 pub trait NodeRole {
+    fn backend(&self) -> Arc<Mutex<postgres::Client>>;
     /// Sends a query to the shard group
     fn send_query(&mut self, query: &str) -> Option<String>;
     fn stop(&mut self);
+
+    fn get_all_tables(&mut self) -> Vec<String> {
+        let query =
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
+        let Some(rows) = self.get_rows_for_query(query) else {
+            return Vec::new();
+        };
+        let mut tables = Vec::new();
+        for row in rows {
+            let table_name: String = row.get(0);
+            tables.push(table_name);
+        }
+        tables
+    }
+
+    fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
+        match self.backend().as_ref().try_lock().unwrap().query(query, &[]) {
+            Ok(rows) => {
+                if rows.is_empty() {
+                    return None;
+                }
+                print_rows(rows.clone());
+                Some(rows)
+            }
+            Err(e) => {
+                eprintln!("Failed to execute query: {e:?}");
+                None
+            }
+        }
+    }
 }
 
 #[repr(C)]
