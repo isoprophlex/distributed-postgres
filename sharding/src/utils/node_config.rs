@@ -1,4 +1,3 @@
-use raft::node_config::*;
 use serde::Deserialize;
 use std::fs;
 
