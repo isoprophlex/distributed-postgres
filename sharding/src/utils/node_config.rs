@@ -31,7 +31,7 @@ pub fn get_nodes_config() -> NodesConfig {
 
 pub fn get_nodes_config_raft() -> raft::node_config::NodesConfig {
     // read from 'config.yaml' to get the NodeConfig from raft
-    let config_file_path ="../../../sharding/src/node/config/nodes_config.yaml";
+    let config_file_path = "../../../sharding/src/node/config/nodes_config.yaml";
 
     let config_content =
         fs::read_to_string(config_file_path).expect("Should have been able to read the file");

@@ -35,7 +35,7 @@ pub struct Channel {
 }
 
 pub trait ConvertToString {
-    fn convert_to_string(&self,) -> String;
+    fn convert_to_string(&self) -> String;
 }
 
 pub trait FromString {

@@ -1,14 +1,14 @@
+use super::router::Router;
+use super::shard::Shard;
 use crate::node::client::Client;
 use crate::utils::node_config::get_nodes_config_raft;
 use crate::utils::queries::print_rows;
-use super::router::Router;
-use super::shard::Shard;
+use postgres::Row;
 use std::ffi::CStr;
 use std::fmt::Error;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use postgres::Row;
 use tokio::runtime::Runtime;
 
 use tokio::task;
@@ -35,7 +35,13 @@ pub trait NodeRole {
     }
 
     fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
-        match self.backend().as_ref().try_lock().unwrap().query(query, &[]) {
+        match self
+            .backend()
+            .as_ref()
+            .try_lock()
+            .unwrap()
+            .query(query, &[])
+        {
             Ok(rows) => {
                 print_rows(rows.clone());
                 Some(rows)
@@ -62,7 +68,7 @@ pub struct NodeInstance {
     pub instance: Option<Box<dyn NodeRole>>,
     pub ip: String,
     pub port: String,
-    pub node_type: NodeType
+    pub node_type: NodeType,
 }
 
 impl NodeInstance {
@@ -71,7 +77,7 @@ impl NodeInstance {
             instance: Some(instance),
             ip,
             port,
-            node_type
+            node_type,
         }
     }
 }
@@ -104,10 +110,7 @@ pub fn get_node_role() -> &'static mut dyn NodeRole {
 
 /// External use of Node Instance from PostgreSQL
 #[no_mangle]
-pub extern "C" fn init_node_instance(
-    node_type: NodeType,
-    port: *const i8
-) {
+pub extern "C" fn init_node_instance(node_type: NodeType, port: *const i8) {
     let found_port;
     unsafe {
         if port.is_null() {
@@ -131,7 +134,7 @@ pub extern "C" fn init_node_instance(
     if node_type == NodeType::Client {
         return;
     }
-    
+
     let (raft_transmitter, self_receiver): (Sender<bool>, Receiver<bool>) = mpsc::channel();
     let (self_transmitter, raft_receiver): (Sender<bool>, Receiver<bool>) = mpsc::channel();
 
@@ -148,13 +151,7 @@ fn run_raft(ip: String, port: String, transmitter: Sender<bool>, receiver: Recei
             task::block_in_place(|| {
                 let local = LocalSet::new();
                 local.block_on(&rt, async {
-                    new_raft_instance(
-                        ip,
-                        port,
-                        transmitter,
-                        receiver
-                    )
-                    .await;
+                    new_raft_instance(ip, port, transmitter, receiver).await;
                 });
             });
         });
@@ -165,7 +162,7 @@ async fn new_raft_instance(
     ip: String,
     port: String,
     transmitter: Sender<bool>,
-    receiver: Receiver<bool>
+    receiver: Receiver<bool>,
 ) {
     // Iterate over nodes and find the name of the one that matches ip and port:
     let nodes = get_nodes_config_raft();
@@ -180,7 +177,7 @@ async fn new_raft_instance(
     let mut raft_module = raft::raft_module::RaftModule::new(
         node_id.clone(),
         ip.to_string(),
-        port.parse::<usize>().unwrap()
+        port.parse::<usize>().unwrap(),
     );
 
     // This nevers comes back, unless the node is the last one in the config file
@@ -191,7 +188,7 @@ async fn new_raft_instance(
             Some(&format!("../../../sharding/init_history/init_{}", node_id)),
             transmitter,
             receiver,
-            true
+            true,
         )
         .await;
 }
@@ -199,23 +196,25 @@ async fn new_raft_instance(
 // MARK: Node Role
 
 fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
-    thread::spawn(move || {
-        loop {
-            match receiver.recv() {
-                Ok(stopped) => {
-                    let role = if stopped { NodeType::Router } else { NodeType::Shard };
-                    match change_role(role.to_owned(), transmitter.clone()) {
-                        Ok(_) => {
-                            println!("Role changing finished succesfully");
-                        }
-                        Err(_) => {
-                            println!("Error could not change role to {:?}", role);
-                        }
+    thread::spawn(move || loop {
+        match receiver.recv() {
+            Ok(stopped) => {
+                let role = if stopped {
+                    NodeType::Router
+                } else {
+                    NodeType::Shard
+                };
+                match change_role(role.to_owned(), transmitter.clone()) {
+                    Ok(_) => {
+                        println!("Role changing finished succesfully");
+                    }
+                    Err(_) => {
+                        println!("Error could not change role to {:?}", role);
                     }
                 }
-                Err(e) => {
-                    println!("Error receiving from raft transmitter: {:?}", e);
-                }
+            }
+            Err(e) => {
+                println!("Error receiving from raft transmitter: {:?}", e);
             }
         }
     });
@@ -223,7 +222,7 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
 
 fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Error> {
     println!("Changing role to {:?}", new_role);
-    
+
     if new_role == NodeType::Client {
         println!("NodeRole cannot be changed to Client, it is not a valid role");
         return Err(Error);
@@ -307,7 +306,7 @@ fn init_router(ip: &str, port: &str) {
             Box::new(router.clone()),
             ip.to_string(),
             port.to_string(),
-            NodeType::Router
+            NodeType::Router,
         ));
     }
 
@@ -331,7 +330,7 @@ fn init_shard(ip: &str, port: &str) {
             Box::new(shard.clone()),
             ip.to_string(),
             port.to_string(),
-            NodeType::Shard
+            NodeType::Shard,
         ));
     }
 
@@ -353,7 +352,7 @@ fn init_client(ip: &str, port: &str) {
             Box::new(Client::new(ip, port)),
             ip.to_string(),
             port.to_string(),
-            NodeType::Client
+            NodeType::Client,
         ));
     }
     println!("Client node initializes");

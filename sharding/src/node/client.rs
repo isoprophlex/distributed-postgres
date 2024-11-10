@@ -31,28 +31,23 @@ impl Client {
         let config = get_nodes_config();
         let stream = Self::get_router_info(get_nodes_config());
         match stream {
-            Some(router_stream) => {
-                Client {
-                    router_postgres_client: Channel {
-                        stream: Arc::new(Mutex::new(router_stream)),
-                    },
-                    client_info: NodeInfo {
-                        ip: ip.to_string(),
-                        port: port.to_string(),
-                    },
-                    nodes: config,
+            Some(router_stream) => Client {
+                router_postgres_client: Channel {
+                    stream: Arc::new(Mutex::new(router_stream)),
+                },
+                client_info: NodeInfo {
                     ip: ip.to_string(),
                     port: port.to_string(),
-                }
-            }
+                },
+                nodes: config,
+                ip: ip.to_string(),
+                port: port.to_string(),
+            },
             None => {
                 eprintln!("No valid router found in the config. Terminating.");
                 panic!("Failed to establish a router connection");
             }
         }
-
-
-
     }
     pub fn get_router_info(config: NodesConfig) -> Option<TcpStream> {
         let mut candidate_ip;
@@ -63,7 +58,10 @@ impl Client {
                 candidate_ip = node.ip.clone();
                 candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
 
-                let mut candidate_stream = match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
+                let mut candidate_stream = match TcpStream::connect(format!(
+                    "{}:{}",
+                    candidate_ip, candidate_port
+                )) {
                     Ok(stream) => {
                         println!(
                             "{color_bright_green}Health connection established with {}:{}{style_reset}",
@@ -72,31 +70,40 @@ impl Client {
                         stream
                     }
                     Err(e) => {
-                        eprintln!("Failed to connect to the node. Is there any node up?"); // Flush 
+                        eprintln!("Failed to connect to the node. Is there any node up?"); // Flush
                         continue;
                     }
                 };
 
                 let message = message::Message::new_get_router();
-                if candidate_stream.write_all(message.to_string().as_bytes()).is_err() {
+                if candidate_stream
+                    .write_all(message.to_string().as_bytes())
+                    .is_err()
+                {
                     eprintln!("Failed to send message to the node.");
                     continue;
                 }
 
                 let response: &mut [u8] = &mut [0; 1024];
-                candidate_stream.set_read_timeout(Some(std::time::Duration::from_secs(10))).unwrap();
+                candidate_stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                    .unwrap();
 
                 match candidate_stream.read(response) {
                     Ok(_) => {
                         let response_str = String::from_utf8_lossy(response);
                         if let Ok(response_message) = message::Message::from_string(&response_str) {
-                            if response_message.get_message_type() == message::MessageType::RouterId {
+                            if response_message.get_message_type() == message::MessageType::RouterId
+                            {
                                 if let Some(node_info) = response_message.get_data().node_info {
                                     let node_ip = node_info.ip.clone();
                                     let node_port = node_info.port.clone();
                                     let connections_port = node_port.parse::<u64>().unwrap() + 1000;
 
-                                    match TcpStream::connect(format!("{}:{}", node_ip, connections_port)) {
+                                    match TcpStream::connect(format!(
+                                        "{}:{}",
+                                        node_ip, connections_port
+                                    )) {
                                         Ok(router_stream) => {
                                             println!(
                                                 "{color_bright_green}Connected to router stream {}:{}{style_reset}",
@@ -105,7 +112,10 @@ impl Client {
                                             return Some(router_stream);
                                         }
                                         Err(e) => {
-                                            eprintln!("Failed to connect to the router stream: {:?}", e);
+                                            eprintln!(
+                                                "Failed to connect to the router stream: {:?}",
+                                                e
+                                            );
                                             continue;
                                         }
                                     }
@@ -122,12 +132,11 @@ impl Client {
         }
     }
 
-
     fn handle_received_message(buffer: &mut [u8]) {
         let message_string = String::from_utf8_lossy(&buffer);
         let response_message = match message::Message::from_string(&message_string) {
             Ok(message) => message,
-            Err(e) => {
+            Err(_) => {
                 return;
             }
         };
@@ -172,7 +181,10 @@ impl NodeRole for Client {
 
         // Intentar enviar el mensaje y reconectar si falla
         if let Err(e) = stream.write_all(message.to_string().as_bytes()) {
-            eprintln!("{color_bright_red}Failed to send the query: {:?}{style_reset}", e);
+            eprintln!(
+                "{color_bright_red}Failed to send the query: {:?}{style_reset}",
+                e
+            );
             eprintln!("Reconnecting to new router...");
             drop(stream);
             // Obtener un nuevo router y actualizar el canal
@@ -186,7 +198,6 @@ impl NodeRole for Client {
                         eprintln!("Failed to lock the new stream: {:?}", e);
                         return None;
                     }
-
                 };
                 // Reintentar el envío con el nuevo router
                 if let Err(e) = stream.write_all(message.to_string().as_bytes()) {
@@ -228,8 +239,7 @@ impl NodeRole for Client {
                             return None;
                         }
                     };
-                    stream.write_all(message.to_string().as_bytes());
-
+                    _ = stream.write_all(message.to_string().as_bytes());
                 } else {
                     eprintln!("No valid router found during reconnection.");
                 }
@@ -242,5 +252,3 @@ impl NodeRole for Client {
         // Not implemented
     }
 }
-
-

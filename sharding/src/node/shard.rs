@@ -102,21 +102,26 @@ impl Shard {
 
             candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
 
-            let mut candidate_stream =
-                match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
-                    Ok(stream) => {
-                        println!(
-                            "{color_bright_green}Health connection established with {}:{}{style_reset}",
-                            candidate_ip, candidate_port
-                        );
-                        stream
-                    }
-                    Err(_) => {
-                        continue;
-                    }
-                };
+            let mut candidate_stream = match TcpStream::connect(format!(
+                "{}:{}",
+                candidate_ip, candidate_port
+            )) {
+                Ok(stream) => {
+                    println!(
+                        "{color_bright_green}Health connection established with {}:{}{style_reset}",
+                        candidate_ip, candidate_port
+                    );
+                    stream
+                }
+                Err(_) => {
+                    continue;
+                }
+            };
 
-            let hello_message = message::Message::new_hello_from_node(NodeInfo { ip: ip.to_string(), port: port.to_string() });
+            let hello_message = message::Message::new_hello_from_node(NodeInfo {
+                ip: ip.to_string(),
+                port: port.to_string(),
+            });
             println!("{color_bright_green}Sending HelloFromNode message to {candidate_ip}:{candidate_port}{style_reset}");
 
             candidate_stream
@@ -160,7 +165,9 @@ impl Shard {
             if *must_stop {
                 println!("{color_red}STOPPED ACCEPT CONNECTIONS{style_reset}");
                 drop(listener);
-                handles.into_iter().for_each(|handle| handle.join().unwrap());
+                handles
+                    .into_iter()
+                    .for_each(|handle| handle.join().unwrap());
                 return;
             }
 
@@ -177,7 +184,6 @@ impl Shard {
 
             match listener.accept() {
                 Ok((stream, addr)) => {
-                    
                     // Start listening for incoming messages in a thread
                     let shard_clone = shared_shard.clone();
                     let shareable_stream = Arc::new(Mutex::new(stream));
@@ -199,7 +205,11 @@ impl Shard {
     }
 
     // Listen for incoming messages
-    pub fn listen(shared_shard: &Arc<Mutex<Shard>>, tcp_stream: &Arc<Mutex<TcpStream>>, stopped: Arc<Mutex<bool>>) {
+    pub fn listen(
+        shared_shard: &Arc<Mutex<Shard>>,
+        tcp_stream: &Arc<Mutex<TcpStream>>,
+        stopped: Arc<Mutex<bool>>,
+    ) {
         println!("Listening for incoming messages");
 
         let mut stream = match tcp_stream.lock() {
@@ -209,7 +219,7 @@ impl Shard {
                 return;
             }
         };
-        
+
         match stream.set_nonblocking(true) {
             Ok(()) => {}
             Err(e) => {
@@ -277,7 +287,9 @@ impl Shard {
                     let message = match Message::from_string(&message_string) {
                         Ok(message) => message,
                         Err(e) => {
-                            eprintln!("Failed to parse message: {e:?}. Message: [{message_string:?}]");
+                            eprintln!(
+                                "Failed to parse message: {e:?}. Message: [{message_string:?}]"
+                            );
                             continue;
                         }
                     };
@@ -285,9 +297,11 @@ impl Shard {
                     if shard.no_need_for_connection(message.to_owned()) {
                         return;
                     }
-                    
+
                     if let Some(response) = shard.get_response_message(message) {
-                        println!("{color_bright_green}Received message: {message_string}{style_reset}");
+                        println!(
+                            "{color_bright_green}Received message: {message_string}{style_reset}"
+                        );
                         println!("{color_bright_green}Sending response: {response}{style_reset}");
                         stream.write_all(response.as_bytes()).unwrap();
                     }
@@ -410,7 +424,10 @@ impl NodeRole for Shard {
 
     fn send_query(&mut self, query: &str) -> Option<String> {
         if query == "whoami;" {
-            println!("{color_bright_green}> I am Shard: {}:{}{style_reset}\n", self.ip, self.port);
+            println!(
+                "{color_bright_green}> I am Shard: {}:{}{style_reset}\n",
+                self.ip, self.port
+            );
             return None;
         }
 
