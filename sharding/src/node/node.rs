@@ -35,6 +35,9 @@ pub trait NodeRole {
     }
 
     fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
+        // Código de error de SQLSTATE para "relation does not exist"
+        const UNDEFINED_TABLE_CODE: &str = "42P01";
+
         match self
             .backend()
             .as_ref()
@@ -47,12 +50,22 @@ pub trait NodeRole {
                 Some(rows)
             }
             Err(e) => {
-                eprintln!("Failed to execute query: {e:?}");
+                if let Some(db_error) = e.as_db_error() {
+                    if db_error.code().code() == UNDEFINED_TABLE_CODE {
+                        eprintln!("Failed to execute query: Relation (table) does not exist");
+                    } else {
+                        eprintln!("Failed to execute query: {e:?}");
+                    }
+                } else {
+                    eprintln!("Failed to execute query: {e:?}");
+                }
                 None
             }
         }
     }
+
 }
+
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone)]

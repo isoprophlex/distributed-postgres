@@ -674,12 +674,23 @@ impl Router {
     }
 
     fn send_query_to_shard(&mut self, shard_id: &str, query: &str, update: bool) -> Vec<Row> {
+        // Código de error de SQLSTATE para "relation does not exist"
+        const UNDEFINED_TABLE_CODE: &str = "42P01";
+
         println!("Sending query to shard {shard_id}: {query}");
         if let Some(shard) = self.clone().shards.lock().unwrap().get_mut(shard_id) {
             let rows = match shard.query(query, &[]) {
                 Ok(rows) => rows,
                 Err(e) => {
-                    eprintln!("Failed to send the query to the shard: {e:?}");
+                    if let Some(db_error) = e.as_db_error() {
+                        if db_error.code().code() == UNDEFINED_TABLE_CODE {
+                            eprintln!("Failed to send the query to the shard: Relation (table) does not exist");
+                        } else {
+                            eprintln!("Failed to send the query to the shard: {e:?}");
+                        }
+                    } else {
+                        eprintln!("Failed to send the query to the shard: {e:?}");
+                    }
                     return Vec::new();
                 }
             };
@@ -693,6 +704,8 @@ impl Router {
         eprintln!("Shard {shard_id:?} not found");
         Vec::new()
     }
+
+
 
     fn send_query_to_backend(&mut self, query: &str) -> Option<String> {
         println!(
