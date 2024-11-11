@@ -705,8 +705,6 @@ impl Router {
         Vec::new()
     }
 
-
-
     fn send_query_to_backend(&mut self, query: &str) -> Option<String> {
         println!(
             "{color_bright_green}Sending query to the router database: ({query}){style_reset}"

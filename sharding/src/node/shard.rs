@@ -100,21 +100,19 @@ impl Shard {
 
             candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
 
-            let mut candidate_stream = match TcpStream::connect(format!(
-                "{}:{}",
-                candidate_ip, candidate_port
-            )) {
-                Ok(stream) => {
-                    println!(
+            let mut candidate_stream =
+                match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
+                    Ok(stream) => {
+                        println!(
                         "{color_bright_green}Health connection established with {}:{}{style_reset}",
                         candidate_ip, candidate_port
                     );
-                    stream
-                }
-                Err(_) => {
-                    continue;
-                }
-            };
+                        stream
+                    }
+                    Err(_) => {
+                        continue;
+                    }
+                };
 
             let hello_message = message::Message::new_hello_from_node(NodeInfo {
                 ip: ip.to_string(),

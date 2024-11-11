@@ -63,9 +63,7 @@ pub trait NodeRole {
             }
         }
     }
-
 }
-
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone)]
