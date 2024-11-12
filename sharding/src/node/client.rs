@@ -60,18 +60,14 @@ impl Client {
                 candidate_ip = node.ip.clone();
                 candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
 
-                let mut candidate_stream = match TcpStream::connect(format!(
-                    "{}:{}",
-                    candidate_ip, candidate_port
-                )) {
-                    Ok(stream) => {
-                        stream
-                    }
-                    Err(_) => {
-                        // Connection to node failed
-                        continue;
-                    }
-                };
+                let mut candidate_stream =
+                    match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
+                        Ok(stream) => stream,
+                        Err(_) => {
+                            // Connection to node failed
+                            continue;
+                        }
+                    };
 
                 let message = message::Message::new_get_router();
                 if candidate_stream
@@ -101,7 +97,7 @@ impl Client {
                                             continue;
                                         }
                                     }
-                                },
+                                }
                                 message::MessageType::NoRouterData => {
                                     // if no router data is found, the network might be in the process of going live.
                                     // wait for a while to allow to elect a leader and try again.
@@ -133,22 +129,17 @@ impl Client {
             let node_port = node_info.port.clone();
             let connections_port = node_port.parse::<u64>().unwrap() + 1000;
 
-            match TcpStream::connect(format!(
-                "{}:{}",
-                node_ip, connections_port
-            )) {
+            match TcpStream::connect(format!("{}:{}", node_ip, connections_port)) {
                 Ok(router_stream) => {
                     println!(
                         "{color_bright_green}Connected to router stream {}:{}{style_reset}",
-                        node_ip, connections_port.to_string()
+                        node_ip,
+                        connections_port.to_string()
                     );
                     return Some(router_stream);
                 }
                 Err(e) => {
-                    eprintln!(
-                        "Failed to connect to the router stream: {:?}",
-                        e
-                    );
+                    eprintln!("Failed to connect to the router stream: {:?}", e);
                     return None;
                 }
             }
