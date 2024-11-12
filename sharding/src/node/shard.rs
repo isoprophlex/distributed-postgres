@@ -346,7 +346,6 @@ impl Shard {
     }
 
     fn handle_get_router_message(&mut self) -> Option<String> {
-        println!("{color_bright_green}Received a GetRouter message{style_reset}");
         let self_clone = self.clone();
         let router_info: Option<NodeInfo> = {
             let router_info = self_clone.router_info.as_ref().try_lock().unwrap();

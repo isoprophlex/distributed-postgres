@@ -223,7 +223,6 @@ impl Router {
     }
 
     fn handle_get_router_message(&mut self) -> Option<String> {
-        println!("{color_bright_green}Received a GetRouter message{style_reset}");
         let self_clone = self.clone();
         let ip = self_clone.ip.clone().to_string();
         let port = self_clone.port.clone().to_string();

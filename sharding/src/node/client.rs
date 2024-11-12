@@ -1,4 +1,5 @@
 use inline_colorization::*;
+use users::switch;
 extern crate users;
 use std::{
     io::{Read, Write},
@@ -52,6 +53,7 @@ impl Client {
     pub fn get_router_info(config: NodesConfig) -> Option<TcpStream> {
         let mut candidate_ip;
         let mut candidate_port;
+        let mut ran_more_than_once = false;
 
         loop {
             for node in &config.nodes {
@@ -63,14 +65,10 @@ impl Client {
                     candidate_ip, candidate_port
                 )) {
                     Ok(stream) => {
-                        println!(
-                            "{color_bright_green}Health connection established with {}:{}{style_reset}",
-                            candidate_ip, candidate_port
-                        );
                         stream
                     }
-                    Err(e) => {
-                        eprintln!("Failed to connect to the node. Is there any node up?"); // Flush
+                    Err(_) => {
+                        // Connection to node failed
                         continue;
                     }
                 };
@@ -86,39 +84,33 @@ impl Client {
 
                 let response: &mut [u8] = &mut [0; 1024];
                 candidate_stream
-                    .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                    .set_read_timeout(Some(std::time::Duration::from_secs(3)))
                     .unwrap();
 
                 match candidate_stream.read(response) {
                     Ok(_) => {
                         let response_str = String::from_utf8_lossy(response);
                         if let Ok(response_message) = message::Message::from_string(&response_str) {
-                            if response_message.get_message_type() == message::MessageType::RouterId
-                            {
-                                if let Some(node_info) = response_message.get_data().node_info {
-                                    let node_ip = node_info.ip.clone();
-                                    let node_port = node_info.port.clone();
-                                    let connections_port = node_port.parse::<u64>().unwrap() + 1000;
-
-                                    match TcpStream::connect(format!(
-                                        "{}:{}",
-                                        node_ip, connections_port
-                                    )) {
-                                        Ok(router_stream) => {
-                                            println!(
-                                                "{color_bright_green}Connected to router stream {}:{}{style_reset}",
-                                                node_ip, connections_port.to_string()
-                                            );
+                            match response_message.get_message_type() {
+                                message::MessageType::RouterId => {
+                                    match Client::handle_router_id_message(response_message) {
+                                        Some(router_stream) => {
                                             return Some(router_stream);
                                         }
-                                        Err(e) => {
-                                            eprintln!(
-                                                "Failed to connect to the router stream: {:?}",
-                                                e
-                                            );
+                                        None => {
                                             continue;
                                         }
                                     }
+                                },
+                                message::MessageType::NoRouterData => {
+                                    // if no router data is found, the network might be in the process of going live.
+                                    // wait for a while to allow to elect a leader and try again.
+                                    std::thread::sleep(std::time::Duration::from_secs(3));
+                                    continue;
+                                }
+                                _ => {
+                                    eprintln!("Invalid response from node.");
+                                    continue;
                                 }
                             }
                         }
@@ -128,8 +120,40 @@ impl Client {
                     }
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(10));
+            if !ran_more_than_once {
+                println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
+                ran_more_than_once = true;
+            }
         }
+    }
+
+    fn handle_router_id_message(response_message: message::Message) -> Option<std::net::TcpStream> {
+        if let Some(node_info) = response_message.get_data().node_info {
+            let node_ip = node_info.ip.clone();
+            let node_port = node_info.port.clone();
+            let connections_port = node_port.parse::<u64>().unwrap() + 1000;
+
+            match TcpStream::connect(format!(
+                "{}:{}",
+                node_ip, connections_port
+            )) {
+                Ok(router_stream) => {
+                    println!(
+                        "{color_bright_green}Connected to router stream {}:{}{style_reset}",
+                        node_ip, connections_port.to_string()
+                    );
+                    return Some(router_stream);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Failed to connect to the router stream: {:?}",
+                        e
+                    );
+                    return None;
+                }
+            }
+        }
+        return None;
     }
 
     fn handle_received_message(buffer: &mut [u8]) {
