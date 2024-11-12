@@ -579,7 +579,7 @@ impl NodeRole for Router {
         let mut shards_responses: IndexMap<String, Vec<Row>> = IndexMap::new();
         let mut rows = Vec::new();
         for shard_id in shards {
-            // TODO-A we should add a thread here to make it parallel
+            // TODO-SHARD we should add a thread here to make it parallel
             let shard_response = self.send_query_to_shard(&shard_id.clone(), &query, is_insert);
             if !shard_response.is_empty() {
                 shards_responses.insert(shard_id, shard_response.clone());
