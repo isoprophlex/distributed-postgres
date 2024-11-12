@@ -66,14 +66,19 @@ if [ -z "$selected_port" ]; then
     exit 1
 fi
 
-echo "[init-server] Starting PostgreSQL server on port $selected_port for cluster $DB_CLUSTER_NAME with node type "$NODE_TYPE"..."
+echo "[init-server] Starting PostgreSQL server on port $selected_port for cluster $DB_CLUSTER_NAME with node type $NODE_TYPE..."
 cd $PG_CTL_DIR
 ./pg_ctl -D $DB_DIR -l $LOG_FILE -o "-p $selected_port" start
 
+# Check if pg_ctl ran successfully
+if [ $? -ne 0 ]; then
+    echo "[init-server] Error: Failed to start PostgreSQL server."
+    exit 1
+fi
+
 # If "start" argument is provided, run start-psql.sh
 if [ "$START_PSQL" == "start" ]; then
-    echo "[init-server] Calling start-psql.sh with nodeType "$NODE_TYPE" and port "$selected_port"..."
-    # Pass the necessary argument to start-psql.sh
+    echo "[init-server] Calling start-psql.sh with nodeType $NODE_TYPE and port $selected_port..."
     cd $ROOT_DIR
     ./start-psql.sh $selected_port $NODE_TYPE
 fi

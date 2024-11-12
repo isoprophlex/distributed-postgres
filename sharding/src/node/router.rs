@@ -1,6 +1,8 @@
 use indexmap::IndexMap;
 use postgres::{Client as PostgresClient, Row};
+use rust_decimal::Decimal;
 extern crate users;
+use super::messages::node_info::find_name_for_node;
 use super::node::NodeRole;
 use super::shard_manager::ShardManager;
 use super::tables_id_info::TablesIdInfo;
@@ -9,12 +11,9 @@ use crate::node::messages::node_info::NodeInfo;
 use crate::utils::common::ConvertToString;
 use crate::utils::common::{connect_to_node, Channel};
 use crate::utils::node_config::{get_nodes_config, Node};
-use crate::utils::queries::{
-    format_query_with_new_id, format_rows_with_offset, get_id_if_exists, get_table_name_from_query,
-    print_query_response, query_affects_memory_state, query_is_insert, query_is_select,
-};
-use inline_colorization::{color_bright_green, color_red, style_reset};
-use log::{debug, error, info};
+use crate::utils::queries::*;
+use inline_colorization::*;
+use std::fmt::Error;
 use std::io::{Read, Write};
 use std::sync::{Arc, MutexGuard, RwLock};
 use std::{io, net::TcpListener, net::TcpStream, sync::Mutex, thread};
@@ -34,59 +33,124 @@ pub struct Router {
     comm_channels: Arc<RwLock<IndexMap<String, Channel>>>,
     ip: Arc<str>,
     port: Arc<str>,
+    pub stopped: Arc<Mutex<bool>>,
+    /// Backend for the router, only used when redistributing data
+    backend: Arc<Mutex<PostgresClient>>,
 }
 
 impl Router {
-    /// Creates a new Router node with the given port and ip, and initializes the connections to the shards specified in the configuration file.
-    /// The `config_path` parameter is optional and specifies the path to the configuration file. If not provided, the default path will be used.
-    #[must_use]
-    pub fn new(ip: &str, port: &str, config_path: Option<&str>) -> Self {
-        Router::initialize_router_with_connections(ip, port, config_path)
+    /// Creates a new Router node with the given port and ip, connecting it to the shards specified in the configuration file.
+    pub fn new(ip: &str, port: &str) -> Self {
+        println!("Inside new::Router");
+        Router::initialize_router_with_connections(ip, port)
     }
 
-    /// Listen for incoming connections from clients.
-    pub fn wait_for_client(shared_router: &Arc<Mutex<Router>>, ip: &str, port: &str) {
-        let listener =
-            TcpListener::bind(format!("{}:{}", ip, port.parse::<u64>().unwrap() + 1000)).unwrap();
+    /// Listen for incoming connections from clients or new shards.
+    pub fn wait_for_incomming_connections(
+        shared_router: &Arc<Mutex<Router>>,
+        ip: String,
+        waiting_port: String,
+    ) {
+        let port = waiting_port.parse::<u64>().unwrap() + 1000;
+        println!("Attempting to bind listener to port: {}", port);
+
+        let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
+
+        println!("wait_for_incomming_connections");
 
         loop {
+            let stopped = {
+                let router = match shared_router.lock() {
+                    Ok(shared_router) => shared_router,
+                    Err(_) => {
+                        eprintln!("Failed to get shared router");
+                        return;
+                    }
+                };
+
+                let router_lock = match router.stopped.lock() {
+                    Ok(stopped) => *stopped,
+                    Err(_) => {
+                        eprintln!("Failed to get stopped status");
+                        return;
+                    }
+                };
+                router_lock
+            };
+
+            if stopped {
+                println!("Stopped is true");
+                drop(listener);
+                return;
+            }
+
+            if let Err(e) = listener.set_nonblocking(true) {
+                eprintln!("Failed to set listener to non-blocking: {}", e);
+                return;
+            }
+
             match listener.accept() {
                 Ok((stream, addr)) => {
                     println!(
                         "{color_bright_green}[ROUTER] New connection accepted from {addr}.{style_reset}"
                     );
 
-                    // Start listening for incoming messages in a thread
                     let router_clone = shared_router.clone();
                     let shareable_stream = Arc::new(Mutex::new(stream));
                     let stream_clone = Arc::clone(&shareable_stream);
 
-                    let _handle = thread::spawn(move || {
+                    thread::spawn(move || {
+                        println!("Inside thread in wait_for_client");
                         Router::listen(&router_clone, &stream_clone);
                     });
                 }
                 Err(e) => {
-                    eprintln!("Failed to accept a connection: {e}");
+                    if e.kind() != std::io::ErrorKind::WouldBlock {
+                        eprintln!("Failed to accept connection: {}", e);
+                    }
                 }
             }
         }
     }
 
-    // Listen for incoming messages.
+    // Listen for incoming messages
     pub fn listen(shared_router: &Arc<Mutex<Router>>, stream: &Arc<Mutex<TcpStream>>) {
         loop {
-            // sleep for 1 millisecond to allow the stream to be ready to read
+            // Adquiere el bloqueo del router para verificar el estado 'stopped'
+            let stopped = {
+                let router = match shared_router.lock() {
+                    Ok(router) => router,
+                    Err(_) => {
+                        eprintln!("Failed to get shared router");
+                        return;
+                    }
+                };
+
+                // Verifica el estado 'stopped' y suelta el bloqueo del router
+                let router_clone = *router.stopped.lock().unwrap();
+                router_clone
+            };
+
+            if stopped {
+                println!("Stopped is true");
+                return;
+            }
+
+            // Espera brevemente para permitir que el stream esté listo para leer
             thread::sleep(std::time::Duration::from_millis(1));
-            let mut router = shared_router.lock().unwrap();
             let mut buffer = [0; 1024];
 
-            let mut stream = stream.lock().unwrap();
-
-            match stream.set_read_timeout(Some(std::time::Duration::new(10, 0))) {
-                Ok(()) => {}
-                Err(_e) => {
+            // Adquiere el bloqueo del stream y establece el tiempo de espera de lectura
+            let mut stream = match stream.lock() {
+                Ok(stream) => stream,
+                Err(_) => {
+                    eprintln!("Failed to lock stream");
                     continue;
                 }
+            };
+
+            if let Err(_) = stream.set_read_timeout(Some(std::time::Duration::new(10, 0))) {
+                continue;
             }
 
             match stream.read(&mut buffer) {
@@ -95,16 +159,24 @@ impl Router {
                         continue;
                     }
 
+                    // Convierte el buffer a String
                     let message_string = String::from_utf8_lossy(&buffer);
 
-                    if let Some(response) = router.get_response_message(&message_string) {
-                        stream.write_all(response.as_bytes()).unwrap();
-                    } else {
-                        // do nothing
+                    // Adquiere el bloqueo del router para obtener y enviar la respuesta
+                    let response = {
+                        let mut router = shared_router.lock().unwrap();
+                        router.get_response_message(&message_string).clone()
+                    };
+
+                    if let Some(response) = response {
+                        // Envía la respuesta a través del stream (ya está bloqueado)
+                        if let Err(e) = stream.write_all(response.as_bytes()) {
+                            eprintln!("Failed to send response: {:?}", e);
+                        }
                     }
                 }
-                Err(_e) => {
-                    // could not read from the stream, ignore
+                Err(_) => {
+                    // No se pudo leer del stream, ignóralo
                 }
             }
         }
@@ -117,21 +189,22 @@ impl Router {
 
         let message = match Message::from_string(message) {
             Ok(message) => message,
-            Err(e) => {
-                eprintln!("Failed to parse message: {e:?}. Message: [{message:?}]");
+            Err(_) => {
                 return None;
             }
         };
 
-        if message.get_message_type() == MessageType::Query {
-            self.handle_query_message(&message)
-        } else {
-            eprintln!(
-                "Message type received: {:?}, not yet implemented",
-                message.get_message_type()
-            );
-
-            None
+        match message.get_message_type() {
+            MessageType::Query => self.handle_query_message(&message),
+            MessageType::GetRouter => self.handle_get_router_message(),
+            MessageType::HelloFromNode => self.handle_hello_from_node_message(&message),
+            _ => {
+                eprintln!(
+                    "Message type received: {:?}, not yet implemented",
+                    message.get_message_type()
+                );
+                None
+            }
         }
     }
 
@@ -139,22 +212,52 @@ impl Router {
         let query = message.get_data().query.unwrap();
         let Some(response) = self.send_query(&query) else {
             eprintln!("Failed to send query to shards");
-            return None;
+            let response_message = Message::new_query_response(
+                "[⚠️] There are no shards available at this moment. Please try again later."
+                    .to_string(),
+            );
+            return Some(response_message.to_string());
         };
         let response_message = Message::new_query_response(response);
-
         Some(response_message.to_string())
     }
 
+    fn handle_get_router_message(&mut self) -> Option<String> {
+        let self_clone = self.clone();
+        let ip = self_clone.ip.clone().to_string();
+        let port = self_clone.port.clone().to_string();
+        let router_info: NodeInfo = NodeInfo { ip, port };
+
+        let response_message = Message::new_router_id(router_info.clone());
+        Some(response_message.to_string())
+    }
+
+    fn handle_hello_from_node_message(&mut self, message: &Message) -> Option<String> {
+        println!("Received HelloFromNode message");
+        let node_info = match message.get_data().node_info {
+            Some(node_info) => node_info,
+            None => {
+                eprintln!("Failed to get node info from message");
+                return None;
+            }
+        };
+        if let Some(name) = find_name_for_node(&node_info) {
+            self.configure_shard_connection_to(Node {
+                ip: node_info.ip,
+                port: node_info.port,
+                name: name,
+            });
+        }
+        Some("OK".to_string())
+    }
+
     /// Initializes the Router node with connections to the shards specified in the configuration file.
-    fn initialize_router_with_connections(
-        ip: &str,
-        port: &str,
-        config_path: Option<&str>,
-    ) -> Router {
+    fn initialize_router_with_connections(ip: &str, port: &str) -> Router {
         let shards: IndexMap<String, PostgresClient> = IndexMap::new();
         let comm_channels: IndexMap<String, Channel> = IndexMap::new();
         let shard_manager = ShardManager::new();
+
+        let backend = connect_to_node(ip, port).unwrap();
 
         let mut router = Router {
             shards: Arc::new(Mutex::new(shards)),
@@ -162,16 +265,19 @@ impl Router {
             comm_channels: Arc::new(RwLock::new(comm_channels)),
             ip: Arc::from(ip),
             port: Arc::from(port),
+            stopped: Arc::new(Mutex::new(false)),
+            backend: Arc::new(Mutex::new(backend)),
         };
 
-        router.configure_connections(config_path);
-
+        router.configure_connections();
+        router.redistribute_data();
         router
     }
 
-    fn configure_connections(&mut self, config_path: Option<&str>) {
-        let config = get_nodes_config(config_path);
+    fn configure_connections(&mut self) {
+        let config = get_nodes_config();
         for shard in config.nodes {
+            println!("Configuring connection to shard: {:?}", shard);
             if (shard.ip == self.ip.as_ref()) && (shard.port == self.port.as_ref()) {
                 continue;
             }
@@ -184,15 +290,24 @@ impl Router {
         let node_ip = node.ip;
         let node_port = node.port;
 
+        if self
+            .set_health_connection(node_ip.as_str(), node_port.as_str())
+            .is_err()
+        {
+            println!("Failed to connect to node: {}", node.name);
+            return;
+        }
+
+        println!("Connecting to ip {} and port: {}", node_ip, node_port);
+
         let Ok(shard_client) = connect_to_node(&node_ip, &node_port) else {
             println!("Failed to connect to port: {node_port}");
             return;
         };
 
-        println!("Connected to ip {node_ip} and port: {node_port}");
+        println!("CONNECTED to ip {} and port: {}", node_ip, node_port);
 
         self.save_shard_client(node_port.to_string(), shard_client);
-        self.set_health_connection(node_ip.as_str(), node_port.as_str());
     }
 
     /// Saves the shard client in the Router's shards `IndexMap` with its corresponding shard id as key.
@@ -201,16 +316,17 @@ impl Router {
         shards.insert(shard_id, shard_client);
     }
 
-    /// Sets the `health_connection` to the shard with the given ip and port, initializing the communication with a handshake between the router and the shard.
-    fn set_health_connection(&mut self, node_ip: &str, node_port: &str) {
+    /// Sets the health_connection to the shard with the given ip and port, initializing the communication with a handshake between the router and the shard.
+    fn set_health_connection(&mut self, node_ip: &str, node_port: &str) -> Result<(), Error> {
         let Ok(health_connection) = Router::get_shard_channel(node_ip, node_port) else {
             println!("Failed to create health-connection to port: {node_port}");
-            return;
+            return Err(Error);
         };
 
         if self.send_init_connection_message(&health_connection.clone(), node_port) {
             self.save_comm_channel(node_port.to_string(), health_connection);
         }
+        Ok(())
     }
 
     /// Saves the communication channel to the shard with the given shard id as key.
@@ -317,6 +433,7 @@ impl Router {
     /// Establishes a health connection with the node with the given ip and port, returning a Channel.
     fn get_shard_channel(node_ip: &str, node_port: &str) -> Result<Channel, io::Error> {
         let port = node_port.parse::<u64>().unwrap() + 1000;
+        println!("Attempting to connect to port: {}", port);
         match TcpStream::connect(format!("{node_ip}:{port}")) {
             Ok(stream) => {
                 println!(
@@ -349,7 +466,12 @@ impl Router {
         println!("ID NOT FOUND in query.");
         if query_is_insert(query) {
             println!("Query is INSERT");
-            let shard = self.shard_manager.peek().unwrap();
+            let shard = match self.shard_manager.peek() {
+                Some(shard) => shard,
+                None => {
+                    return ([].to_vec(), false, query.to_string());
+                }
+            };
             (vec![shard.clone()], true, query.to_string())
         } else {
             // Return all shards
@@ -424,22 +546,39 @@ impl Router {
     }
 }
 
+// MARK: - NodeRole implementation
 impl NodeRole for Router {
+    fn backend(&self) -> Arc<Mutex<postgres::Client>> {
+        self.backend.clone()
+    }
+
     fn send_query(&mut self, received_query: &str) -> Option<String> {
+        if received_query == "whoami;" {
+            println!("> I am Router: {}:{}\n", self.ip, self.port);
+            return None;
+        }
+
         println!("Router send_query called with query: {received_query:?}");
 
         let (shards, is_insert, query) = self.get_data_needed_from(received_query);
 
         println!("Shards: {shards:?}, is_insert: {is_insert}, query: {query}");
 
+        // If there are no shards available, the router uses its own backend to execute the query
         if shards.is_empty() {
-            eprintln!("No shards found for the query");
-            return None;
+            let response = match self.send_query_to_backend(received_query) {
+                Some(response) => response,
+                None => {
+                    return None;
+                }
+            };
+            return Some(response);
         }
 
         let mut shards_responses: IndexMap<String, Vec<Row>> = IndexMap::new();
         let mut rows = Vec::new();
         for shard_id in shards {
+            // TODO-A we should add a thread here to make it parallel
             let shard_response = self.send_query_to_shard(&shard_id.clone(), &query, is_insert);
             if !shard_response.is_empty() {
                 shards_responses.insert(shard_id, shard_response.clone());
@@ -453,7 +592,7 @@ impl NodeRole for Router {
         } else {
             println!(
                 "Query is SELECT: {}, shards_responses is empty: {}",
-                query_is_insert(&query),
+                query_is_select(&query),
                 shards_responses.is_empty()
             );
             rows.convert_to_string()
@@ -462,9 +601,20 @@ impl NodeRole for Router {
         print_query_response(response.clone());
         Some(response)
     }
+
+    fn stop(&mut self) {
+        match self.stopped.lock() {
+            Ok(mut stopped) => {
+                *stopped = true;
+            }
+            Err(_) => {
+                eprintln!("Failed to stop router");
+            }
+        }
+    }
 }
 
-// Communication with shards
+// MARK: - Communication with shards
 impl Router {
     fn get_stream(&self, shard_id: &str) -> Option<Arc<Mutex<TcpStream>>> {
         let Ok(comm_channels) = self.comm_channels.read() else {
@@ -505,7 +655,7 @@ impl Router {
     }
 
     /// Sends a message to the shard asking for a memory update.
-    /// This must be called each time an insertion query is sent, and may be used to update the shard's memory size in the `ShardManager` in other circumstances.
+    /// This must be called each time a query is sent which affects the memory (see `query_affects_memory_state` at queries.rs), and may be used to update the shard's memory size in the `ShardManager` in other circumstances.
     fn ask_for_memory_update(&mut self, shard_id: &str) {
         let Some(stream) = self.get_stream(shard_id) else {
             eprintln!("Failed to get stream for shard {shard_id}");
@@ -523,11 +673,23 @@ impl Router {
     }
 
     fn send_query_to_shard(&mut self, shard_id: &str, query: &str, update: bool) -> Vec<Row> {
+        // Código de error de SQLSTATE para "relation does not exist"
+        const UNDEFINED_TABLE_CODE: &str = "42P01";
+
+        println!("Sending query to shard {shard_id}: {query}");
         if let Some(shard) = self.clone().shards.lock().unwrap().get_mut(shard_id) {
             let rows = match shard.query(query, &[]) {
                 Ok(rows) => rows,
                 Err(e) => {
-                    eprintln!("Failed to send the query to the shard: {e:?}");
+                    if let Some(db_error) = e.as_db_error() {
+                        if db_error.code().code() == UNDEFINED_TABLE_CODE {
+                            eprintln!("Failed to send the query to the shard: Relation (table) does not exist");
+                        } else {
+                            eprintln!("Failed to send the query to the shard: {e:?}");
+                        }
+                    } else {
+                        eprintln!("Failed to send the query to the shard: {e:?}");
+                    }
                     return Vec::new();
                 }
             };
@@ -540,5 +702,168 @@ impl Router {
         }
         eprintln!("Shard {shard_id:?} not found");
         Vec::new()
+    }
+
+    fn send_query_to_backend(&mut self, query: &str) -> Option<String> {
+        println!(
+            "{color_bright_green}Sending query to the router database: ({query}){style_reset}"
+        );
+        let rows = self.get_rows_for_query(query)?;
+        Some(rows.convert_to_string())
+    }
+}
+
+// MARK: - Data Redistribution
+impl Router {
+    fn backend_has_data(&mut self) -> bool {
+        let query = "SELECT * FROM information_schema.tables WHERE table_schema = 'public'";
+        let rows = self.get_rows_for_query(query);
+        rows.is_some()
+    }
+
+    fn redistribute_data(&mut self) {
+        if !self.backend_has_data() {
+            println!("No data found in backend. Skipping redistribution.");
+            return;
+        }
+
+        let shards = match self.shards.lock() {
+            Ok(shards) => shards,
+            Err(_) => {
+                eprintln!("Failed to get shards");
+                return;
+            }
+        };
+
+        if shards.is_empty() {
+            println!("No shards found to redistribute data. Holding on to data until shards are available.");
+            return;
+        }
+
+        // drop shard lock
+        drop(shards);
+
+        let tables = self.get_all_tables();
+
+        // Prepare data structures
+        let mut starting_queries = Vec::new();
+
+        for table in &tables {
+            // Generate CREATE TABLE query
+            let create_query = self.generate_create_table_query(table);
+            starting_queries.push(create_query);
+
+            let mut insert_queries = Vec::new();
+            // Fetch all rows from the table
+            if let Some(rows) = self.get_rows_for_query(&format!("SELECT * FROM {}", table)) {
+                // Convert each row to an INSERT query and store it
+                for row in rows {
+                    let insert_query = self.row_to_insert_query(&row, table);
+                    insert_queries.push(insert_query);
+                }
+            }
+
+            // Send queries to appropriate shards
+            for insert_query in &insert_queries {
+                let (shards, _, formatted_query) = self.get_data_needed_from(insert_query);
+
+                for shard_id in shards {
+                    // Send `starting_query` if it hasn't been sent for this table
+                    let table_starting_query =
+                        starting_queries.iter().find(|q| q.contains(table)).unwrap();
+                    self.send_query_to_shard(&shard_id, table_starting_query, false);
+
+                    // Send the actual insert query
+                    self.send_query_to_shard(&shard_id, &formatted_query, true);
+                }
+            }
+        }
+
+        // Drop all tables from router backend
+        self.drop_all_tables(&tables);
+    }
+
+    fn generate_create_table_query(&mut self, table: &str) -> String {
+        // Dynamically generate CREATE TABLE statement for the specified table
+        let query = format!(
+            "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{}'",
+            table
+        );
+        let rows = self.get_rows_for_query(&query).unwrap();
+
+        let columns_definitions: Vec<String> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                let column_name: String = row.get("column_name");
+                // PostgresClient does not support getting the PrimaryKey, so all tables will have a SERIAL PRIMARY KEY called "id". If you want to fix this, be my guest
+                let data_type: String = if column_name == "id" {
+                    "SERIAL PRIMARY KEY".to_string()
+                } else {
+                    row.get("data_type")
+                };
+                format!("{} {}", column_name, data_type)
+            })
+            .collect();
+
+        format!(
+            "CREATE TABLE IF NOT EXISTS {} ({})",
+            table,
+            columns_definitions.join(", ")
+        )
+    }
+
+    fn row_to_insert_query(&self, row: &Row, table: &str) -> String {
+        let columns = row.columns();
+        let column_names: Vec<String> = columns
+            .iter()
+            .skip(1)
+            .map(|c| c.name().to_string())
+            .collect();
+
+        // Convert each column value to a string using your ConvertToString trait
+        let mut result: Vec<String> = vec![];
+
+        for (i, _) in row.columns().iter().enumerate() {
+            // First column is the ID, we skip it
+            if i == 0 {
+                continue;
+            }
+            // Try to get the value as a String, If it fails, try to get it as an i32. Same for f64 and Decimal
+            let formatted_value = match row.try_get::<usize, String>(i) {
+                Ok(v) => format!("'{}'", v),
+                Err(_) => match row.try_get::<usize, i32>(i) {
+                    Ok(v) => format!("{}", v),
+                    Err(_) => match row.try_get::<usize, f64>(i) {
+                        Ok(v) => format!("{}", v),
+                        Err(_) => match row.try_get::<usize, Decimal>(i) {
+                            Ok(v) => format!("{}", v),
+                            Err(_) => String::new(),
+                        },
+                    },
+                },
+            };
+
+            result.push(formatted_value);
+        }
+
+        let query = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            table,
+            column_names.join(", "),
+            result.join(", ")
+        );
+
+        println!("{color_bright_green}Query: {query:?}{style_reset}");
+
+        query
+    }
+
+    fn drop_all_tables(&mut self, tables: &[String]) {
+        for table in tables {
+            let drop_query = format!("DROP TABLE IF EXISTS {}", table);
+            let _ = self.get_rows_for_query(&drop_query);
+            println!("Dropped table {}", table);
+        }
     }
 }

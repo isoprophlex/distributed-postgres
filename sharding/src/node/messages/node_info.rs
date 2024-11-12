@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use crate::utils::node_config::get_nodes_config;
+
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub ip: String,
@@ -37,4 +39,18 @@ impl std::fmt::Display for NodeInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}:{}", self.ip, self.port)
     }
+}
+
+pub fn find_name_for_node(node_info: &NodeInfo) -> Option<String> {
+    let config = get_nodes_config();
+    for node in config.nodes {
+        let candidate_info = NodeInfo {
+            ip: node.ip,
+            port: node.port,
+        };
+        if candidate_info == *node_info {
+            return Some(node.name);
+        }
+    }
+    None
 }
