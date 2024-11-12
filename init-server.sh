@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Ask for the database cluster name if not provided
-if [ -z "$3" ]; then
+if [ -z "$1" ]; then
     read -p "Enter the name of the database cluster to start: " DB_CLUSTER_NAME
 else
-    DB_CLUSTER_NAME=$3
+    DB_CLUSTER_NAME=$1
 fi
 
 # Define paths
@@ -17,9 +17,8 @@ DB_DIR="$CLUSTERS_DIR/$DB_CLUSTER_NAME"
 LOG_FILE="$CLUSTERS_DIR/logfile"
 CONFIG_FILE="$SHARDING_DIR/src/node/config/nodes_config.yaml" # Path to config.yaml
 
-# Check for additional argument
-START_PSQL=$1
-NODE_TYPE=$2
+# Check for additional argument. If node type is not given, set it to "s" by default
+NODE_TYPE=${2:-s}
 
 # If we're on OS X, make sure that globals aren't stripped out.
 if [ "$(uname)" == "Darwin" ]; then
@@ -76,9 +75,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# If "start" argument is provided, run start-psql.sh
-if [ "$START_PSQL" == "start" ]; then
-    echo "[init-server] Calling start-psql.sh with nodeType $NODE_TYPE and port $selected_port..."
-    cd $ROOT_DIR
-    ./start-psql.sh $selected_port $NODE_TYPE
-fi
+# Run start-psql.sh
+echo "[init-server] Calling start-psql.sh with nodeType $NODE_TYPE and port $selected_port..."
+cd $ROOT_DIR
+./start-psql.sh $selected_port $NODE_TYPE
