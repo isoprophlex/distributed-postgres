@@ -1,4 +1,87 @@
-PostgreSQL Database Management System
+Distributed Postgres
+=====================================
+
+# Contributors
+- Aldana Rastrelli
+- Franco Cuppari
+- Nicolas Continanza
+
+Universidad de Buenos Aires, December 2024
+
+# About this Project
+This is a distributed implementation of the PostgreSQL database management system. The project is based on the original C source code, but expanded with a Rust crate called "Sharding". The main goal of this project is to provide a distributed database system that can be used in a cluster of machines. The scope is, however, somehow limited: we took upon ourselves to achieve the goal of making this work for a simple, yet efficient, CRUD system (Create, Read, Update and Delete). 
+
+# How to Run
+## Creating Cluster
+To run this locally, you need to first create some cluster databases. Each cluster will represent a different instance. You can create a cluster by running on the root of this project:
+```
+./create-cluster-dir.sh
+```
+
+The script will ask for a cluster name and create one in the "./clusters" directory.
+If you are running only one instance in each server, you just need to create the one cluster.
+
+You should also create a cluster for the client. This cluster should be reserved to be use only (and ever) with the client instance, because it does not have access to postgre's backend. Any data stored previously in it by a shard or a router won't be available.
+
+## Setting the Nodes Configuration
+Each node should know the other nodes in the network.
+This is set manually in the "nodes_config.yaml" file (sharding > src > node > config).
+You can follow the given example and change the ips, ports and even given names. 
+Just be careful: every server should have this file with the same content to create the sharding network. This is the telephone directy of the node's sharding graph.
+
+## Running Shards
+On the root of the project, run:
+```
+./init-server <cluster_name>
+```
+
+This will run a shard instance.
+You can call this in different terminals for every cluster you have created locally, or you can call it once if you are running in different servers.
+
+⚠️ You should not need to run a router. The router must be a shard chosen by an election, which then changes its role in the network. But, in the rare case you need to run a router instance (for debugging, for example), you can run `./init-server <cluster_name> r`, adding an "r" at the end of the command to let it know you want to run it as a router.
+
+## Running a Client
+Finally, once the network is up and the router is elected, you may run a client to access the database. You can do so with this command:
+```
+./init-client.sh <cluster_name>
+```
+
+You can also run a client without the network being done initializing, but you'll just get a warning message and the terminal will be blocked, waiting for the client to find a Router.
+
+## Sending Queries
+In the client instance, you can use the terminal to query the database as you like. The abstraction provided by the router will make it seem as if the client is connected to a centralized database. Remember, the project only supports queries as: 
+
+- INSERT
+- DELETE
+- DROP
+- UPDATE
+- CREATE
+- SELECT
+
+"WHERE" statements are also supported.
+
+You may also query each shard individually if you like, but you'll get only the results for the data stored in said shard.
+In the same way, you can query the router. This will give you a client-like behavior, getting the results for all the shards and merging them.
+
+## Ending execution
+To stop the psql execution, you can type `\q` and press enter. 
+You must also the command `./server-down.sh`, so it stops every postgres task running in the background.
+
+```
+# Output example of server-down.rs:
+Available database clusters:
+n1
+n2
+n3
+Enter the name of the database cluster to stop (or type 'all' to stop all clusters): 
+```
+⚠️ You won't be able to run the instance again if you don't run server-down. You'll get a "Refused Connection" error for the given port.
+
+<br>
+<br>
+<br>
+
+Postgres Original Documentation: PostgreSQL Database Management System
 =====================================
 
 This directory contains the source code distribution of the PostgreSQL
