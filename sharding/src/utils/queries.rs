@@ -245,7 +245,7 @@ pub fn print_query_response(response: String) {
         if line.is_empty() {
             continue;
         }
-        println!("{}\n", line);
+        println!("{}", line);
     }
 }
 
