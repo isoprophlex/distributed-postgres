@@ -1,7 +1,6 @@
 use indexmap::IndexMap;
 use postgres::{Client as PostgresClient, Row};
 use rust_decimal::Decimal;
-use tokio::task;
 extern crate users;
 use super::messages::node_info::find_name_for_node;
 use super::node::NodeRole;
@@ -297,7 +296,7 @@ impl Router {
     }
 
     /// Configures the connection to a shard with the given ip and port.
-    fn configure_shard_connection_to(&mut self, node: Node) {
+    pub fn configure_shard_connection_to(&mut self, node: Node) {
         let node_ip = node.ip;
         let node_port = node.port;
 

@@ -1,5 +1,4 @@
 use inline_colorization::*;
-use users::switch;
 extern crate users;
 use std::{
     io::{Read, Write},
