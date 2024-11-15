@@ -25,9 +25,9 @@ You should also create a cluster for the client. This cluster should be reserved
 
 ## Setting the Nodes Configuration
 Each node should know the other nodes in the network.
-This is set manually in the "nodes_config.yaml" file (sharding > src > node > config).
-You can follow the given example and change the ips, ports and even given names. 
-Just be careful: every server should have this file with the same content to create the sharding network. This is the telephone directy of the node's sharding graph.
+This is set manually in the "nodes_config.yaml" file (sharding/src/node/config/nodes_config.yaml).
+You can follow the given example and change the IPs, ports and even given names. 
+Just be careful: every server should have this file with the same content to create the sharding network. This is the telephone directory of the cluster's graph of nodes.
 
 ## Running Shards
 On the root of the project, run:
