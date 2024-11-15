@@ -29,24 +29,35 @@ else
     fi
 fi
 
+# Stop all clusters if "all" is passed
 if [ "$DB_CLUSTER_NAME" == "all" ]; then
+    # List all clusters
+    clusters=()
+    for dir in $CLUSTERS_DIR/*/; do
+        if [[ "$dir" != "$CLUSTERS_DIR/config/" && "$dir" != "$CLUSTERS_DIR/contrib/" && "$dir" != "$CLUSTERS_DIR/doc/" && "$dir" != "$CLUSTERS_DIR/sharding/" && "$dir" != "$CLUSTERS_DIR/src/" ]]; then
+            clusters+=("$(basename "$dir")")
+        fi
+    done
+
     # Stop all clusters
     for cluster in "${clusters[@]}"; do
         DB_DIR="$CLUSTERS_DIR/$cluster"
         echo "[SERVER-DOWN] Stopping PostgreSQL server for cluster $cluster..."
         cd $PG_CTL_DIR
         ./pg_ctl -D $DB_DIR stop
-        echo "[SERVER-DOWN] Finished $cluster."
+        echo "[SERVER-DOWN]Finished for cluster $cluster."
     done
-else
-    DB_DIR="$CLUSTERS_DIR/$DB_CLUSTER_NAME"
-    if [ ! -d "$DB_DIR" ]; then
-        echo "[ERROR] The specified database cluster directory does not exist."
-        exit 1
-    fi
-
-    echo "[SERVER-DOWN] Stopping PostgreSQL server for cluster $DB_CLUSTER_NAME..."
-    cd $PG_CTL_DIR
-    ./pg_ctl -D $DB_DIR stop
-    echo "[SERVER-DOWN] Finished $DB_CLUSTER_NAME."
+    exit 0
 fi
+
+# Stop a specific cluster
+DB_DIR="$CLUSTERS_DIR/$DB_CLUSTER_NAME"
+if [ ! -d "$DB_DIR" ]; then
+    echo "[ERROR] The specified database cluster directory does not exist."
+    exit 1
+fi
+
+echo "[SERVER-DOWN] Stopping PostgreSQL server for cluster $DB_CLUSTER_NAME..."
+cd $PG_CTL_DIR
+./pg_ctl -D $DB_DIR stop
+echo "[SERVER-DOWN] Finished for cluster $DB_CLUSTER_NAME."
