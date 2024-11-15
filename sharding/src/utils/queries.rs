@@ -31,6 +31,7 @@ pub fn query_affects_memory_state(query: &str) -> bool {
         || query_is(query, QueryTypes::DELETE)
         || query_is(query, QueryTypes::DROP)
         || query_is(query, QueryTypes::UPDATE)
+        || query_is(query, QueryTypes::CREATE)
 }
 
 /// Gets the name of the table from a query, whenever the query has a "FROM <tablename>" clause.
@@ -240,13 +241,32 @@ pub fn print_query_response(response: String) {
         println!("\n");
         return;
     }
-    // Split by \n and print each line
+    // Split by \0 and print each line
     for line in response.split('\0') {
         if line.is_empty() {
             continue;
         }
         println!("{}", line);
     }
+}
+
+pub fn format_rows_without_offset(rows: Vec<Row>) -> String {
+    let mut result = String::new();
+    // If is empty, return empty string
+    if rows.is_empty() {
+        return result;
+    }
+
+    let columns = rows[0].columns();
+    let columns_names = get_column_names(columns);
+    result.push_str(&columns_names);
+    result.push('\0');
+
+    for row in rows {
+        result.push_str(&row.convert_to_string(" | "));
+        result.push('\0');
+    }
+    result
 }
 
 pub fn format_rows_with_offset(rows_offset: Vec<(Vec<Row>, i64)>) -> String {
@@ -283,20 +303,40 @@ mod tests {
     }
 
     #[test]
-    fn test_query_affects_memory_state() {
+    fn test_query_affects_memory_state_insert() {
         assert!(query_affects_memory_state(
             "INSERT INTO employees (id, name) VALUES (1, 'Alice')"
         ));
+    }
+
+    #[test]
+    fn test_query_affects_memory_state_delete() {
         assert!(query_affects_memory_state(
             "DELETE FROM employees WHERE id = 1"
         ));
+    }
+    
+    #[test]
+    fn test_query_affects_memory_state_drop() {
         assert!(query_affects_memory_state("DROP TABLE employees"));
+    }
+
+    #[test]
+    fn test_query_affects_memory_state_update() {
         assert!(query_affects_memory_state(
             "UPDATE employees SET name = 'Alice' WHERE id = 1"
         ));
+    }
+
+    #[test]
+    fn test_query_affects_memory_state_create() {
         assert!(query_affects_memory_state(
             "CREATE TABLE employees (id INT, name TEXT)"
         ));
+    }
+
+    #[test]
+    fn test_query_affects_memory_state_select() {
         assert!(!query_affects_memory_state("SELECT * FROM employees"));
     }
 
