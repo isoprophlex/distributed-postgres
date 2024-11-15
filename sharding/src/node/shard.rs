@@ -4,6 +4,7 @@ use super::messages::node_info::NodeInfo;
 use super::node::NodeRole;
 use super::tables_id_info::TablesIdInfo;
 use crate::node::messages::message;
+use crate::node::messages::node_info::find_name_for_node;
 use crate::node::shard;
 use crate::utils::common::{connect_to_node, ConvertToString};
 use crate::utils::node_config::{get_memory_config, get_nodes_config};
@@ -25,6 +26,7 @@ pub struct Shard {
     backend: Arc<Mutex<PostgresClient>>,
     ip: Arc<str>,
     port: Arc<str>,
+    name: String,
     memory_manager: Arc<Mutex<MemoryManager>>,
     router_info: Arc<Mutex<Option<NodeInfo>>>,
     tables_max_id: Arc<Mutex<TablesIdInfo>>,
@@ -59,10 +61,19 @@ impl Shard {
             memory_manager.available_memory_perc
         );
 
+        let name = match find_name_for_node(ip.to_string(), port.to_string()) {
+            Some(name) => name,
+            None => {
+                eprintln!("Failed to find name for node. Using ip and port for identification");
+                format!("{}:{}", ip, port)
+            }
+        };
+
         let mut shard = Shard {
             backend: Arc::new(Mutex::new(backend)),
             ip: Arc::from(ip),
             port: Arc::from(port),
+            name,
             memory_manager: Arc::new(Mutex::new(memory_manager)),
             router_info: Arc::new(Mutex::new(None)),
             tables_max_id: Arc::new(Mutex::new(IndexMap::new())),
@@ -82,7 +93,7 @@ impl Shard {
         MemoryManager::new(reserved_memory)
     }
 
-    pub fn look_for_sharding_network(ip: &str, port: &str) {
+    pub fn look_for_sharding_network(ip: &str, port: &str, name: &str) {
         println!("Checking if there's a sharding network ...");
 
         let config = get_nodes_config();
@@ -117,6 +128,7 @@ impl Shard {
             let hello_message = message::Message::new_hello_from_node(NodeInfo {
                 ip: ip.to_string(),
                 port: port.to_string(),
+                name: name.to_string()
             });
             println!("{color_bright_green}Sending HelloFromNode message to {candidate_ip}:{candidate_port}{style_reset}");
 
@@ -132,11 +144,6 @@ impl Shard {
 
         let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
 
-        // After binding a listener, look for an ongoing sharding network live
-        Shard::look_for_sharding_network(&ip, &accepting_port);
-
-        let mut handles: Vec<JoinHandle<()>> = Vec::new();
-
         let shard = match shared_shard.lock() {
             Ok(shared_router) => shared_router,
             Err(_) => {
@@ -145,9 +152,15 @@ impl Shard {
                 return;
             }
         };
-
+        
+        let name = shard.name.clone();
         let stopped = shard.stopped.clone();
         std::mem::drop(shard);
+
+        // After binding a listener, look for an ongoing sharding network live
+        Shard::look_for_sharding_network(&ip, &accepting_port, &name);
+
+        let mut handles: Vec<JoinHandle<()>> = Vec::new();        
 
         loop {
             let must_stop = match stopped.lock() {

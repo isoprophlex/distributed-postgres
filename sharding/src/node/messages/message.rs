@@ -254,6 +254,8 @@ impl Message {
             result.push_str(&node_info.ip);
             result.push(':');
             result.push_str(&node_info.port);
+            result.push(':');
+            result.push_str(&node_info.name);
         } else {
             result.push_str("None");
         }
@@ -352,6 +354,7 @@ mod tests {
         let node_info = NodeInfo {
             ip: "1".to_string(),
             port: "2".to_string(),
+            name: "node_name".to_string(),
         };
         let message = Message::new_init_connection(node_info.clone());
         assert_eq!(
@@ -448,6 +451,7 @@ mod tests {
         let node_info = NodeInfo {
             ip: "1".to_string(),
             port: "2".to_string(),
+            name: "node_name".to_string(),
         };
         let message = Message::new_router_id(node_info.clone());
         assert_eq!(
@@ -483,6 +487,7 @@ mod tests {
             Some(NodeInfo {
                 ip: "1".to_string(),
                 port: "2".to_string(),
+                name: "node_name".to_string(),
             }),
             "SELECT * FROM table".to_string(),
         );
@@ -516,6 +521,7 @@ mod tests {
         let node_info = NodeInfo {
             ip: "1".to_string(),
             port: "2".to_string(),
+            name: "node_name".to_string(),
         };
 
         let message = Message {
@@ -537,6 +543,7 @@ mod tests {
             node_info: Some(NodeInfo {
                 ip: "1".to_string(),
                 port: "2".to_string(),
+                name: "node_name".to_string(),
             }),
             query_data: Some("SELECT * FROM table".to_string()),
         };
@@ -547,6 +554,7 @@ mod tests {
                 Some(NodeInfo {
                     ip: "1".to_string(),
                     port: "2".to_string(),
+                    name: "node_name".to_string(),
                 })
             )
         );
@@ -602,6 +610,7 @@ mod tests {
         let node_info = NodeInfo {
             ip: "1".to_string(),
             port: "2".to_string(),
+            name: "node_name".to_string(),
         };
 
         let max_ids = TablesIdInfo::from_string("employees:3,departments:5");
@@ -626,6 +635,7 @@ mod tests {
             node_info: Some(NodeInfo {
                 ip: "1".to_string(),
                 port: "2".to_string(),
+                name: "node_name".to_string(),
             }),
             query_data: Some("SELECT * FROM table".to_string()),
         };

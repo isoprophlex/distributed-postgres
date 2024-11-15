@@ -120,6 +120,7 @@ mod tests {
         let node_info = NodeInfo {
             ip: "1".to_string(),
             port: "2".to_string(),
+            name: "node_name".to_string()
         };
 
         let message_data = MessageData::new_node_info(node_info.clone());
@@ -133,13 +134,15 @@ mod tests {
             Some(NodeInfo {
                 ip: "1".to_string(),
                 port: "2".to_string(),
+                name: "node_name".to_string()
             }),
         );
         assert_eq!(
             message_data.node_info,
             Some(NodeInfo {
                 ip: "1".to_string(),
-                port: "2".to_string()
+                port: "2".to_string(),
+                name: "node_name".to_string()
             })
         );
         assert_eq!(message_data.query, Some("SELECT * FROM table;".to_string()));

@@ -39,6 +39,7 @@ impl Client {
                 client_info: NodeInfo {
                     ip: ip.to_string(),
                     port: port.to_string(),
+                    name: format!("{}:{}:client", ip, port)
                 },
                 nodes: config,
                 ip: ip.to_string(),

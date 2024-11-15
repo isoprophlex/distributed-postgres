@@ -6,6 +6,7 @@ use crate::utils::node_config::get_nodes_config;
 pub struct NodeInfo {
     pub ip: String,
     pub port: String,
+    pub name: String,
 }
 
 impl FromStr for NodeInfo {
@@ -25,7 +26,12 @@ impl FromStr for NodeInfo {
             None => return Err("Missing port"),
         };
 
-        Ok(NodeInfo { ip, port })
+        let name = match parts.next() {
+            Some(name) => name.to_string(),
+            None => return Err("Missing name"),
+        };
+
+        Ok(NodeInfo { ip, port, name })
     }
 }
 
@@ -41,16 +47,25 @@ impl std::fmt::Display for NodeInfo {
     }
 }
 
-pub fn find_name_for_node(node_info: &NodeInfo) -> Option<String> {
+pub fn find_name_for_node(ip: String, port: String) -> Option<String> {
     let config = get_nodes_config();
     for node in config.nodes {
-        let candidate_info = NodeInfo {
-            ip: node.ip,
-            port: node.port,
-        };
-        if candidate_info == *node_info {
+        if node.ip == ip && node.port == port {
             return Some(node.name);
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_node_info_from_str() {
+        let node_info = NodeInfo::from_str("127.0.0.0:5344:node1").unwrap();
+        assert_eq!(node_info.ip, "127.0.0.0");
+        assert_eq!(node_info.port, "5344");
+        assert_eq!(node_info.name, "node1");
+    }
 }
