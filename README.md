@@ -65,7 +65,9 @@ In the same way, you can query the router. This will give you a client-like beha
 
 ## Ending execution
 To stop the psql execution, you can type `\q` and press enter. 
-You must also run `./server-down.sh`, so it stops every postgres task running in the background.
+You must also run `./server-down.sh <cluster-name or "all">`, so it stops every postgres task running in the background.
+
+`server-down` can be called without a cluster name param. The output of this will print the available database clusters for the user to choose the one (or all) to be stopped.
 
 ```
 # Output example of server-down.rs:
