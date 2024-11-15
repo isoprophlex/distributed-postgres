@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
 use postgres::{Client as PostgresClient, Row};
 use rust_decimal::Decimal;
+use tokio::task;
 extern crate users;
 use super::messages::node_info::find_name_for_node;
 use super::node::NodeRole;
@@ -578,7 +579,7 @@ impl NodeRole for Router {
         let mut shards_responses: IndexMap<String, Vec<Row>> = IndexMap::new();
         let mut rows = Vec::new();
         for shard_id in shards {
-            // TODO-A we should add a thread here to make it parallel
+            // TODO-SHARD we should add a thread here to make it parallel
             let shard_response = self.send_query_to_shard(&shard_id.clone(), &query, is_insert);
             if !shard_response.is_empty() {
                 shards_responses.insert(shard_id, shard_response.clone());
@@ -673,7 +674,7 @@ impl Router {
     }
 
     fn send_query_to_shard(&mut self, shard_id: &str, query: &str, update: bool) -> Vec<Row> {
-        // Código de error de SQLSTATE para "relation does not exist"
+        // SQLSTATE code error for "relation does not exist"
         const UNDEFINED_TABLE_CODE: &str = "42P01";
 
         println!("Sending query to shard {shard_id}: {query}");

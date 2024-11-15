@@ -192,7 +192,6 @@ async fn new_raft_instance(
     );
 
     // This nevers comes back, unless the node is the last one in the config file
-    // TODO-A here: check if needed, send "stopped" flag, so the raft module cant stop and come back if the instance is stopped
     raft_module
         .start(
             nodes,
