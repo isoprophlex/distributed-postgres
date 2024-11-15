@@ -3,6 +3,7 @@ use super::shard::Shard;
 use crate::node::client::Client;
 use crate::utils::node_config::get_nodes_config_raft;
 use crate::utils::queries::print_rows;
+use crate::utils::node_config::INIT_HISTORY_FILE_PATH;
 use postgres::Row;
 use std::ffi::CStr;
 use std::fmt::Error;
@@ -121,7 +122,7 @@ pub fn get_node_role() -> &'static mut dyn NodeRole {
 
 /// External use of Node Instance from PostgreSQL
 #[no_mangle]
-pub extern "C" fn init_node_instance(node_type: NodeType, port: *const i8) {
+pub extern "C" fn InitNodeInstance(node_type: NodeType, port: *const i8) {
     let found_port;
     unsafe {
         if port.is_null() {
@@ -195,7 +196,7 @@ async fn new_raft_instance(
     raft_module
         .start(
             nodes,
-            Some(&format!("../../../sharding/init_history/init_{}", node_id)),
+            Some(&format!("{INIT_HISTORY_FILE_PATH}{}", node_id)),
             transmitter,
             receiver,
             true,
@@ -224,7 +225,7 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                 }
             }
             Err(e) => {
-                println!("Error receiving from raft transmitter: {:?}", e);
+                // println!("Error receiving from raft transmitter: {:?}", e);
             }
         }
     });

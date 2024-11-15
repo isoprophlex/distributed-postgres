@@ -192,7 +192,7 @@ impl Shard {
             }
 
             match listener.accept() {
-                Ok((stream, addr)) => {
+                Ok((stream, _)) => {
                     // Start listening for incoming messages in a thread
                     let shard_clone = shared_shard.clone();
                     let shareable_stream = Arc::new(Mutex::new(stream));
