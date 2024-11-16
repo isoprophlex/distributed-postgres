@@ -591,7 +591,7 @@ impl NodeRole for Router {
         let shards_responses: ShardResponses = Arc::new(Mutex::new(IndexMap::new()));
         let rows = Arc::new(Mutex::new(Vec::new()));
         let mut handles = Vec::new();
-        
+
         for shard_id in shards {
             let mut self_clone = self.clone();
             let query_clone = query.clone();
@@ -599,7 +599,8 @@ impl NodeRole for Router {
             let shards_repsonses_clone = shards_responses.clone();
 
             let _shard_response_handle = thread::spawn(move || {
-                let shard_response = self_clone.send_query_to_shard(&shard_id, &query_clone, is_insert);
+                let shard_response =
+                    self_clone.send_query_to_shard(&shard_id, &query_clone, is_insert);
                 if !shard_response.is_empty() {
                     let mut shards_responses = match shards_repsonses_clone.lock() {
                         Ok(shards_responses) => shards_responses,
@@ -610,7 +611,7 @@ impl NodeRole for Router {
                     };
 
                     shards_responses.insert(shard_id, shard_response.clone());
-                    
+
                     let mut rows_lock = match rows_clone.lock() {
                         Ok(rows) => rows,
                         Err(_) => {
