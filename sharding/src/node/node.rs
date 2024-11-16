@@ -224,7 +224,7 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                     }
                 }
             }
-            Err(e) => {
+            Err(_) => {
                 // println!("Error receiving from raft transmitter: {:?}", e);
             }
         }
