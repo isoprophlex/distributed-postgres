@@ -1,7 +1,6 @@
 use indexmap::IndexMap;
 use postgres::{Client as PostgresClient, Row};
 use rust_decimal::Decimal;
-use tokio::task;
 extern crate users;
 use super::messages::node_info::find_name_for_node;
 use super::node::NodeRole;
@@ -34,6 +33,7 @@ pub struct Router {
     comm_channels: Arc<RwLock<IndexMap<String, Channel>>>,
     ip: Arc<str>,
     port: Arc<str>,
+    name: String,
     pub stopped: Arc<Mutex<bool>>,
     /// Backend for the router, only used when redistributing data
     backend: Arc<Mutex<PostgresClient>>,
@@ -227,7 +227,8 @@ impl Router {
         let self_clone = self.clone();
         let ip = self_clone.ip.clone().to_string();
         let port = self_clone.port.clone().to_string();
-        let router_info: NodeInfo = NodeInfo { ip, port };
+        let name = self_clone.name.clone().to_string();
+        let router_info: NodeInfo = NodeInfo { ip, port, name };
 
         let response_message = Message::new_router_id(router_info.clone());
         Some(response_message.to_string())
@@ -242,13 +243,11 @@ impl Router {
                 return None;
             }
         };
-        if let Some(name) = find_name_for_node(&node_info) {
-            self.configure_shard_connection_to(Node {
-                ip: node_info.ip,
-                port: node_info.port,
-                name: name,
-            });
-        }
+        self.configure_shard_connection_to(Node {
+            ip: node_info.ip,
+            port: node_info.port,
+            name: node_info.name,
+        });
         Some("OK".to_string())
     }
 
@@ -260,12 +259,21 @@ impl Router {
 
         let backend = connect_to_node(ip, port).unwrap();
 
+        let name = match find_name_for_node(ip.to_string(), port.to_string()) {
+            Some(name) => name,
+            None => {
+                eprintln!("Failed to find name for node. Using ip and port for identification");
+                format!("{}:{}", ip, port)
+            }
+        };
+
         let mut router = Router {
             shards: Arc::new(Mutex::new(shards)),
             shard_manager: Arc::new(shard_manager),
             comm_channels: Arc::new(RwLock::new(comm_channels)),
             ip: Arc::from(ip),
             port: Arc::from(port),
+            name,
             stopped: Arc::new(Mutex::new(false)),
             backend: Arc::new(Mutex::new(backend)),
         };
@@ -280,6 +288,7 @@ impl Router {
         for shard in config.nodes {
             println!("Configuring connection to shard: {:?}", shard);
             if (shard.ip == self.ip.as_ref()) && (shard.port == self.port.as_ref()) {
+                self.name = shard.name.clone();
                 continue;
             }
             self.configure_shard_connection_to(shard);
@@ -287,7 +296,7 @@ impl Router {
     }
 
     /// Configures the connection to a shard with the given ip and port.
-    fn configure_shard_connection_to(&mut self, node: Node) {
+    pub fn configure_shard_connection_to(&mut self, node: Node) {
         let node_ip = node.ip;
         let node_port = node.port;
 
@@ -349,6 +358,7 @@ impl Router {
         let node_info = NodeInfo {
             ip: self.ip.as_ref().to_string(),
             port: self.port.as_ref().to_string(),
+            name: self.name.clone(),
         };
         let update_message = Message::new_init_connection(node_info);
         println!("Sending message to shard: {update_message:?}");
@@ -591,11 +601,8 @@ impl NodeRole for Router {
             println!("Query is SELECT and shards_responses is not empty");
             self.format_response(shards_responses, &query)
         } else {
-            println!(
-                "Query is SELECT: {}, shards_responses is empty: {}",
-                query_is_select(&query),
-                shards_responses.is_empty()
-            );
+            // Query is not select or shard response is empty.
+            // Therefore, there's no need to format the response to abstract the offset
             rows.convert_to_string()
         };
 
@@ -710,7 +717,8 @@ impl Router {
             "{color_bright_green}Sending query to the router database: ({query}){style_reset}"
         );
         let rows = self.get_rows_for_query(query)?;
-        Some(rows.convert_to_string())
+        let response = format_rows_without_offset(rows);
+        Some(response)
     }
 }
 

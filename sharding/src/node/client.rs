@@ -1,5 +1,4 @@
 use inline_colorization::*;
-use users::switch;
 extern crate users;
 use std::{
     io::{Read, Write},
@@ -39,6 +38,7 @@ impl Client {
                 client_info: NodeInfo {
                     ip: ip.to_string(),
                     port: port.to_string(),
+                    name: format!("{}:{}:client", ip, port),
                 },
                 nodes: config,
                 ip: ip.to_string(),
