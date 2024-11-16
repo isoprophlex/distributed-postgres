@@ -2,9 +2,12 @@
 
 use core::panic;
 use postgres::{Client, NoTls};
-use sharding::node::node::{get_node_role, InitNodeInstance, NodeType, NodeRole};
+use sharding::node::node::{get_node_role, InitNodeInstance, NodeRole, NodeType};
 use std::{
-    fs, io::Write, process::{Command, Stdio}, thread
+    fs,
+    io::Write,
+    process::{Command, Stdio},
+    thread,
 };
 use users::get_current_username;
 
@@ -12,7 +15,10 @@ use users::get_current_username;
 mod integration_test {
     use std::sync::{Arc, Mutex};
 
-    use sharding::{node::{router::Router, shard::Shard}, utils::node_config::Node};
+    use sharding::{
+        node::{router::Router, shard::Shard},
+        utils::node_config::Node,
+    };
 
     use super::*;
 
@@ -52,8 +58,10 @@ mod integration_test {
         create_and_init_cluster(b"test-shard\n", "s", "localhost", "5433");
         create_and_init_cluster(b"test-router\n", "r", "localhost", "5434");
 
-        let mut router_connection: Client = setup_connection("localhost", "5433", "template1").unwrap();
-        let mut shard_connection: Client = setup_connection("localhost", "5434", "template1").unwrap();
+        let mut router_connection: Client =
+            setup_connection("localhost", "5433", "template1").unwrap();
+        let mut shard_connection: Client =
+            setup_connection("localhost", "5434", "template1").unwrap();
 
         // Count user tables, excluding system tables
         let row = router_connection
@@ -95,7 +103,8 @@ mod integration_test {
         thread::sleep(std::time::Duration::from_secs(15));
         create_and_init_cluster(b"test-router1\n", "r", "localhost", "5434");
 
-        let mut shard_connection: Client = setup_connection("localhost", "5433", "template1").unwrap();
+        let mut shard_connection: Client =
+            setup_connection("localhost", "5433", "template1").unwrap();
 
         let mut router = Router::new("localhost", "5434");
         let node: Node = Node {
@@ -106,8 +115,12 @@ mod integration_test {
         router.configure_shard_connection_to(node);
 
         // Create a table on the router
-        assert!(router.send_query("DROP TABLE IF EXISTS test_table;").is_some());
-        assert!(router.send_query("CREATE TABLE test_table (id INT PRIMARY KEY);").is_some());
+        assert!(router
+            .send_query("DROP TABLE IF EXISTS test_table;")
+            .is_some());
+        assert!(router
+            .send_query("CREATE TABLE test_table (id INT PRIMARY KEY);")
+            .is_some());
 
         // Count user tables in the shard, excluding system tables. Should be one.
         let row = shard_connection
@@ -140,7 +153,8 @@ mod integration_test {
         thread::sleep(std::time::Duration::from_secs(15));
         create_and_init_cluster(b"test-router1\n", "r", "localhost", "5434");
 
-        let mut shard_connection: Client = setup_connection("localhost", "5433", "template1").unwrap();
+        let mut shard_connection: Client =
+            setup_connection("localhost", "5433", "template1").unwrap();
 
         let mut router = Router::new("localhost", "5434");
         let node: Node = Node {
@@ -149,14 +163,20 @@ mod integration_test {
             name: "test-shard1".to_string(),
         };
         router.configure_shard_connection_to(node);
-        
+
         // Create a table on the router
-        assert!(router.send_query("DROP TABLE IF EXISTS test_table;").is_some());
-        assert!(router.send_query("CREATE TABLE test_table (id INT PRIMARY KEY);").is_some());
+        assert!(router
+            .send_query("DROP TABLE IF EXISTS test_table;")
+            .is_some());
+        assert!(router
+            .send_query("CREATE TABLE test_table (id INT PRIMARY KEY);")
+            .is_some());
 
         // Insert 10000 rows into the table
         for i in 0..10000 {
-            assert!(router.send_query(&format!("INSERT INTO test_table VALUES ({});", i)).is_some());
+            assert!(router
+                .send_query(&format!("INSERT INTO test_table VALUES ({});", i))
+                .is_some());
         }
 
         // Select all rows from the table using the shard connection
@@ -172,7 +192,9 @@ mod integration_test {
         }
 
         // Delete half of the rows from the table using the router connection
-        assert!(router.send_query("DELETE FROM test_table WHERE id % 2 = 0;").is_some());
+        assert!(router
+            .send_query("DELETE FROM test_table WHERE id % 2 = 0;")
+            .is_some());
 
         // Select all rows from the table using the shard connection
         let rows = shard_connection
@@ -250,7 +272,6 @@ mod integration_test {
             .expect("failed to delete cluster");
     }
 
-
     fn delete_test_clusters() {
         let clusters_dir = "../clusters";
 
@@ -259,7 +280,14 @@ mod integration_test {
             let path = entry.path();
 
             // Check if the directory name starts with "test-"
-            if path.is_dir() && path.file_name().unwrap().to_str().unwrap().starts_with("test-") {
+            if path.is_dir()
+                && path
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with("test-")
+            {
                 let mut _delete_cluster = Command::new("rm")
                     .current_dir(clusters_dir)
                     .arg("-rf")
@@ -297,4 +325,4 @@ mod integration_test {
             }
         }
     }
-} 
+}

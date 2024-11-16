@@ -33,9 +33,7 @@ pub fn get_nodes_config() -> NodesConfig {
     let config_content = match fs::read_to_string(config_file_path) {
         Ok(content) => content,
         Err(_) => {
-            return NodesConfig {
-                nodes: vec![],
-            };
+            return NodesConfig { nodes: vec![] };
         }
     };
 

@@ -315,7 +315,7 @@ mod tests {
             "DELETE FROM employees WHERE id = 1"
         ));
     }
-    
+
     #[test]
     fn test_query_affects_memory_state_drop() {
         assert!(query_affects_memory_state("DROP TABLE employees"));

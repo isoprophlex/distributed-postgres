@@ -246,7 +246,7 @@ impl Router {
         self.configure_shard_connection_to(Node {
             ip: node_info.ip,
             port: node_info.port,
-            name: node_info.name
+            name: node_info.name,
         });
         Some("OK".to_string())
     }

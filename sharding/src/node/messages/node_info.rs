@@ -60,7 +60,7 @@ pub fn find_name_for_node(ip: String, port: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_node_info_from_str() {
         let node_info = NodeInfo::from_str("127.0.0.0:5344:node1").unwrap();

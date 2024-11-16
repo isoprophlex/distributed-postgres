@@ -128,7 +128,7 @@ impl Shard {
             let hello_message = message::Message::new_hello_from_node(NodeInfo {
                 ip: ip.to_string(),
                 port: port.to_string(),
-                name: name.to_string()
+                name: name.to_string(),
             });
             println!("{color_bright_green}Sending HelloFromNode message to {candidate_ip}:{candidate_port}{style_reset}");
 
@@ -152,7 +152,7 @@ impl Shard {
                 return;
             }
         };
-        
+
         let name = shard.name.clone();
         let stopped = shard.stopped.clone();
         std::mem::drop(shard);
@@ -160,7 +160,7 @@ impl Shard {
         // After binding a listener, look for an ongoing sharding network live
         Shard::look_for_sharding_network(&ip, &accepting_port, &name);
 
-        let mut handles: Vec<JoinHandle<()>> = Vec::new();        
+        let mut handles: Vec<JoinHandle<()>> = Vec::new();
 
         loop {
             let must_stop = match stopped.lock() {
