@@ -34,7 +34,7 @@ pub struct Shard {
 }
 
 use std::fmt;
-impl fmt::Debug for Shard {
+impl fmt::Debug for Shard {  
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Shard")
             .field("ip", &self.ip)
@@ -125,7 +125,7 @@ impl Shard {
                     }
                 };
 
-            let hello_message = message::Message::new_hello_from_node(NodeInfo {
+            let hello_message = Message::new_hello_from_node(NodeInfo {
                 ip: ip.to_string(),
                 port: port.to_string(),
                 name: name.to_string(),
@@ -155,7 +155,7 @@ impl Shard {
 
         let name = shard.name.clone();
         let stopped = shard.stopped.clone();
-        std::mem::drop(shard);
+        drop(shard);
 
         // After binding a listener, look for an ongoing sharding network live
         Shard::look_for_sharding_network(&ip, &accepting_port, &name);
@@ -180,7 +180,7 @@ impl Shard {
                 return;
             }
 
-            std::mem::drop(must_stop);
+            drop(must_stop);
 
             // listener is non-blocking, so it can check if the shard is stopped
             match listener.set_nonblocking(true) {
@@ -253,7 +253,7 @@ impl Shard {
                 return;
             }
 
-            std::mem::drop(must_stop);
+            drop(must_stop);
 
             // println!("LOOPING listen");
 
@@ -378,7 +378,7 @@ impl Shard {
         let memory_manager = self.memory_manager.as_ref().try_lock().unwrap();
         let memory_percentage = memory_manager.available_memory_perc;
         let tables_max_id_clone = self.tables_max_id.as_ref().try_lock().unwrap().clone();
-        let response_message = shard::Message::new_agreed(memory_percentage, tables_max_id_clone);
+        let response_message = Message::new_agreed(memory_percentage, tables_max_id_clone);
 
         response_message.to_string()
     }
@@ -396,7 +396,7 @@ impl Shard {
         let memory_percentage = memory_manager.available_memory_perc;
         let tables_max_id_clone = self.tables_max_id.as_ref().try_lock().unwrap().clone();
         let response_message =
-            shard::Message::new_memory_update(memory_percentage, tables_max_id_clone);
+            Message::new_memory_update(memory_percentage, tables_max_id_clone);
 
         response_message.to_string()
     }

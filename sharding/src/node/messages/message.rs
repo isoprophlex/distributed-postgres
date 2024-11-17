@@ -33,6 +33,8 @@ pub struct Message {
 
 /// Implementing Display for Message
 impl fmt::Debug for Message {
+    
+    
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Message")
             .field("message_type", &self.message_type)
@@ -191,13 +193,13 @@ impl Message {
                         return MessageData::new_query(query.clone(), Some(node_info.clone()));
                     }
                 }
-                return MessageData::new_none();
+                MessageData::new_none()
             }
             MessageType::QueryResponse => {
                 if let Some(ref query_response) = self.query_data {
                     return MessageData::new_query_response(query_response.clone());
                 }
-                return MessageData::new_none();
+                MessageData::new_none()
             }
             _ => MessageData::new_none(),
         }
@@ -209,6 +211,7 @@ impl Message {
 }
 
 impl Message {
+
     // Serialize the Message to a String
     pub fn to_string(&self) -> String {
         let mut result = String::new();
@@ -307,7 +310,7 @@ impl Message {
         // Node Info
         let node_info = match parts.next() {
             Some("None") => None,
-            Some(node_info) => Some(node_info.parse().unwrap()),
+            Some(node_info) => Some(node_info.parse()?),
             None => None,
         };
 

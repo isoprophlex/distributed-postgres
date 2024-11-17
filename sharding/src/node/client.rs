@@ -50,6 +50,7 @@ impl Client {
             }
         }
     }
+
     pub fn get_router_info(config: NodesConfig) -> Option<TcpStream> {
         let mut candidate_ip;
         let mut candidate_port;
@@ -123,13 +124,13 @@ impl Client {
         }
     }
 
-    fn handle_router_id_message(response_message: message::Message) -> Option<std::net::TcpStream> {
+    fn handle_router_id_message(response_message: message::Message) -> Option<TcpStream> {
         if let Some(node_info) = response_message.get_data().node_info {
             let node_ip = node_info.ip.clone();
             let node_port = node_info.port.clone();
             let connections_port = node_port.parse::<u64>().unwrap() + 1000;
 
-            match TcpStream::connect(format!("{}:{}", node_ip, connections_port)) {
+            return match TcpStream::connect(format!("{}:{}", node_ip, connections_port)) {
                 Ok(router_stream) => {
                     println!(
                         "{color_bright_green}Connected to router stream {}:{}{style_reset}",
@@ -140,13 +141,13 @@ impl Client {
                 }
                 Err(e) => {
                     eprintln!("Failed to connect to the router stream: {:?}", e);
-                    return None;
+                    None
                 }
             }
         }
-        return None;
+        None
     }
-
+    
     fn handle_received_message(buffer: &mut [u8]) {
         let message_string = String::from_utf8_lossy(&buffer);
         let response_message = match message::Message::from_string(&message_string) {
@@ -263,6 +264,7 @@ impl NodeRole for Client {
         }
     }
 
+    
     fn stop(&mut self) {
         // Not implemented
     }

@@ -17,8 +17,10 @@ use tokio::task::LocalSet;
 
 pub trait NodeRole {
     fn backend(&self) -> Arc<Mutex<postgres::Client>>;
+    
     /// Sends a query to the shard group
     fn send_query(&mut self, query: &str) -> Option<String>;
+    
     fn stop(&mut self);
 
     fn get_all_tables(&mut self) -> Vec<String> {
@@ -34,7 +36,7 @@ pub trait NodeRole {
         }
         tables
     }
-
+    
     fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
         // SQLSTATE Code Error for "relation does not exist"
         const UNDEFINED_TABLE_CODE: &str = "42P01";

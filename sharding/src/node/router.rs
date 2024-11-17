@@ -106,7 +106,7 @@ impl Router {
                     });
                 }
                 Err(e) => {
-                    if e.kind() != std::io::ErrorKind::WouldBlock {
+                    if e.kind() != io::ErrorKind::WouldBlock {
                         eprintln!("Failed to accept connection: {}", e);
                     }
                 }
@@ -182,7 +182,6 @@ impl Router {
             }
         }
     }
-
     fn get_response_message(&mut self, message: &str) -> Option<String> {
         if message.is_empty() {
             return None;
@@ -208,7 +207,7 @@ impl Router {
             }
         }
     }
-
+    
     fn handle_query_message(&mut self, message: &Message) -> Option<String> {
         let query = message.get_data().query.unwrap();
         let Some(response) = self.send_query(&query) else {
@@ -526,11 +525,11 @@ impl Router {
         }
 
         println!("ID not found in any shard");
-        return (
+        (
             self.shards.lock().unwrap().keys().cloned().collect(),
             query_affects_memory_state(query),
             query.to_string(),
-        );
+        )
     }
 
     fn format_response(&self, shards_responses: IndexMap<String, Vec<Row>>, query: &str) -> String {
@@ -685,7 +684,7 @@ impl Router {
 
         Some(shard_comm_channel.stream.clone())
     }
-
+    
     fn init_message_exchange(
         &mut self,
         message: &Message,
@@ -915,7 +914,7 @@ impl Router {
 
         query
     }
-
+    
     fn drop_all_tables(&mut self, tables: &[String]) {
         for table in tables {
             let drop_query = format!("DROP TABLE IF EXISTS {}", table);

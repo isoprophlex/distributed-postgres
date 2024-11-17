@@ -34,6 +34,10 @@ pub fn query_affects_memory_state(query: &str) -> bool {
         || query_is(query, QueryTypes::CREATE)
 }
 
+
+
+
+
 /// Gets the name of the table from a query, whenever the query has a "FROM <tablename>" clause.
 pub fn get_table_name_from_query(query: &str) -> Option<String> {
     // Call get_table_name_behind_keyword with the keywords "FROM", "UPDATE", INTO and TABLE
@@ -79,25 +83,29 @@ fn get_id_index(query: &str) -> Option<usize> {
     let index3 = query_aux.find(query_substring3);
     let index4 = query_aux.find(query_substring4);
 
-    if index1.is_some() {
-        return Some(index1.unwrap() + offset1);
+    return if index1.is_some() {
+        Some(index1.unwrap() + offset1)
     } else if index2.is_some() {
-        return Some(index2.unwrap() + offset2);
+        Some(index2.unwrap() + offset2)
     } else if index3.is_some() {
-        return Some(index3.unwrap() + offset3);
+        Some(index3.unwrap() + offset3)
     } else if index4.is_some() {
-        return Some(index4.unwrap() + offset4);
+        Some(index4.unwrap() + offset4)
     } else {
-        return None;
+        None
     }
 }
+
+
+
+
 
 fn get_trimmed_id(query: &str, from: usize) -> String {
     let mut id = query[from..].trim();
     if id.ends_with(';') {
         id = &id[..id.len() - 1];
     }
-    return id.to_string();
+    id.to_string()
 }
 
 pub fn get_id_if_exists(query: &str) -> Option<i64> {
@@ -105,6 +113,10 @@ pub fn get_id_if_exists(query: &str) -> Option<i64> {
     let id = get_trimmed_id(query, id_index);
     Some(id.parse::<i64>().unwrap())
 }
+
+
+
+
 
 /// Finds the 'WHERE ID=' clause, and changes the value of the id to the new_id
 pub fn format_query_with_new_id(query: &str, new_id: i64) -> String {
@@ -129,6 +141,11 @@ pub trait ConvertRowToString {
 }
 
 impl ConvertRowToString for Row {
+    
+    
+    
+    
+    
     fn convert_to_string(&self, separator: &str) -> String {
         let mut result = String::new();
         // If is empty, return empty string
@@ -159,6 +176,12 @@ impl ConvertRowToString for Row {
 }
 
 impl ConvertToStringOffset for Row {
+    
+    
+    
+    
+    
+    
     fn convert_to_string_with_offset(&self, offset: i64) -> String {
         let mut result = String::new();
         // If is empty, return empty string
@@ -201,6 +224,13 @@ impl ConvertToStringOffset for Row {
 }
 
 impl ConvertToString for Vec<Row> {
+    
+    
+    
+    
+    
+    
+    
     fn convert_to_string(&self) -> String {
         let mut result = String::new();
         // If is empty, return empty string
@@ -221,6 +251,10 @@ impl ConvertToString for Vec<Row> {
         result
     }
 }
+
+
+
+
 
 fn get_column_names(columns: &[Column]) -> String {
     let mut result = String::new();
@@ -250,6 +284,11 @@ pub fn print_query_response(response: String) {
     }
 }
 
+
+
+
+
+
 pub fn format_rows_without_offset(rows: Vec<Row>) -> String {
     let mut result = String::new();
     // If is empty, return empty string
@@ -268,6 +307,9 @@ pub fn format_rows_without_offset(rows: Vec<Row>) -> String {
     }
     result
 }
+
+
+
 
 pub fn format_rows_with_offset(rows_offset: Vec<(Vec<Row>, i64)>) -> String {
     let mut result = String::new();

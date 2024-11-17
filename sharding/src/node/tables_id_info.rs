@@ -43,7 +43,6 @@ impl FromString for TablesIdInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_tables_id_info_convert_to_string() {
         let mut tables_id_info = IndexMap::new();
@@ -55,7 +54,7 @@ mod tests {
                 || (tables_id_info.convert_to_string() == "departments:5,employees:3")
         );
     }
-
+    
     #[test]
     fn test_tables_id_info_from_string() {
         let tables_id_info = TablesIdInfo::from_string("employees:3,departments:5");

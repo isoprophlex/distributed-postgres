@@ -42,6 +42,7 @@ impl PartialEq for NodeInfo {
 }
 
 impl std::fmt::Display for NodeInfo {
+    
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}:{}", self.ip, self.port)
     }
