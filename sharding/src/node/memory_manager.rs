@@ -55,7 +55,10 @@ impl MemoryManager {
         sys.refresh_all();
 
         // Get the root directory information
-        let path = CString::new("/").unwrap();
+        let path = match CString::new("/") {
+            Ok(path) => path,
+            Err(_) => return None,
+        };
         let mut stat: statvfs = unsafe { std::mem::zeroed() };
 
         if unsafe { statvfs(path.as_ptr(), &mut stat) } == 0 {

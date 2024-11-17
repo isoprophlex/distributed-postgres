@@ -23,7 +23,7 @@ pub trait NodeRole {
     
     fn stop(&mut self);
 
-    fn get_all_tables(&mut self) -> Vec<String> {
+    fn get_all_tables_from_self(&mut self) -> Vec<String> {
         let query =
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
         let Some(rows) = self.get_rows_for_query(query) else {
@@ -41,12 +41,16 @@ pub trait NodeRole {
         // SQLSTATE Code Error for "relation does not exist"
         const UNDEFINED_TABLE_CODE: &str = "42P01";
 
-        match self
-            .backend()
-            .as_ref()
-            .try_lock()
-            .unwrap()
-            .query(query, &[])
+        let backend = self.backend();
+        let mut backend_lock = match backend.as_ref().try_lock() {
+            Ok(lock) => lock,
+            Err(_) => {
+                eprintln!("Failed to acquire lock on backend");
+                return None;
+            }
+        };
+
+        match backend_lock.query(query, &[])
         {
             Ok(rows) => {
                 print_rows(rows.clone());
@@ -110,13 +114,21 @@ pub fn get_node_instance() -> &'static mut NodeInstance {
 
 pub fn get_node_role() -> &'static mut dyn NodeRole {
     unsafe {
-        NODE_INSTANCE
-            .as_mut()
-            .unwrap()
-            .instance
-            .as_mut()
-            .unwrap()
-            .as_mut()
+        match NODE_INSTANCE.as_mut() {
+            Some(node_instance) => {
+                match node_instance.instance.as_mut() {
+                    Some(instance) => {
+                        instance.as_mut()
+                    }
+                    None => {
+                        panic!("Node instance not initialized");
+                    }
+                }
+            }
+            None => {
+                panic!("Node instance not initialized");
+            }
+        }
     }
 }
 
@@ -160,7 +172,12 @@ pub extern "C" fn InitNodeInstance(node_type: NodeType, port: *const i8) {
 
 fn run_raft(ip: String, port: String, transmitter: Sender<bool>, receiver: Receiver<bool>) {
     thread::spawn(move || {
-        let rt = Runtime::new().unwrap();
+        let rt = match Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => {
+                panic!("Error creating runtime: {:?}", e);
+            }
+        };
         rt.block_on(async {
             task::block_in_place(|| {
                 let local = LocalSet::new();
@@ -188,10 +205,17 @@ async fn new_raft_instance(
         .name
         .clone();
 
+    let port_number = match port.parse::<usize>() {
+        Ok(port) => port,
+        Err(_) => {
+            panic!("Error parsing port");
+        }
+    };
+
     let mut raft_module = raft::raft_module::RaftModule::new(
         node_id.clone(),
         ip.to_string(),
-        port.parse::<usize>().unwrap(),
+        port_number
     );
 
     // This nevers comes back, unless the node is the last one in the config file
@@ -312,7 +336,12 @@ fn init_router(ip: &str, port: &str) {
     // sleep for 5 seconds to allow the stream to be ready to read
     //thread::sleep(std::time::Duration::from_secs(5));
 
-    let router = Router::new(ip, port);
+    let router = match Router::new(ip, port) {
+        Some(router) => router,
+        None => {
+            panic!("Error initializing router");
+        }
+    };
 
     unsafe {
         NODE_INSTANCE = Some(NodeInstance::new(

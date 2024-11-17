@@ -106,7 +106,13 @@ mod integration_test {
         let mut shard_connection: Client =
             setup_connection("localhost", "5433", "template1").unwrap();
 
-        let mut router = Router::new("localhost", "5434");
+        let mut router = match Router::new("localhost", "5434") {
+            Some(router) => router,
+            None => {
+                self::panic!("Failed to create router");
+            }
+        };
+
         let node: Node = Node {
             ip: "localhost".to_string(),
             port: "5433".to_string(),
@@ -156,7 +162,13 @@ mod integration_test {
         let mut shard_connection: Client =
             setup_connection("localhost", "5433", "template1").unwrap();
 
-        let mut router = Router::new("localhost", "5434");
+        let mut router = match Router::new("localhost", "5434") {
+            Some(router) => router,
+            None => {
+                self::panic!("Failed to create router");
+            }
+        };
+
         let node: Node = Node {
             ip: "localhost".to_string(),
             port: "5433".to_string(),

@@ -3,9 +3,7 @@ use super::messages::message::{Message, MessageType};
 use super::messages::node_info::NodeInfo;
 use super::node::NodeRole;
 use super::tables_id_info::TablesIdInfo;
-use crate::node::messages::message;
 use crate::node::messages::node_info::find_name_for_node;
-use crate::node::shard;
 use crate::utils::common::{connect_to_node, ConvertToString};
 use crate::utils::node_config::{get_memory_config, get_nodes_config};
 use indexmap::IndexMap;
@@ -52,7 +50,13 @@ impl Shard {
         println!("Creating a new Shard node in port: {port}");
         println!("Connecting to the database in port: {port}");
 
-        let backend: PostgresClient = connect_to_node(ip, port).unwrap();
+        let backend: PostgresClient = match connect_to_node(ip, port) {
+            Ok(backend) => backend,
+            Err(e) => {
+                eprintln!("Failed to connect to the database: {e}");
+                panic!("Failed to connect to the database");
+            }
+        };
 
         let memory_manager = Self::initialize_memory_manager();
 
@@ -102,14 +106,20 @@ impl Shard {
 
         for node in config.nodes {
             candidate_ip = node.ip.clone();
-            let node_port = node.port.clone().parse::<u64>().unwrap();
+            let node_port = match node.port.parse::<u64>() {
+                Ok(port) => port,
+                Err(_) => {
+                    eprintln!("Failed to parse port number for node: {}", node.ip);
+                    continue;
+                }
+            };
 
             // Ignore self
             if (&candidate_ip == ip) && (&node_port.to_string() == port) {
                 continue;
             }
 
-            candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
+            candidate_port = node_port + 1000;
 
             let mut candidate_stream =
                 match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
@@ -132,17 +142,31 @@ impl Shard {
             });
             println!("{color_bright_green}Sending HelloFromNode message to {candidate_ip}:{candidate_port}{style_reset}");
 
-            candidate_stream
-                .write_all(hello_message.to_string().as_bytes())
-                .unwrap();
+            match candidate_stream.write_all(hello_message.to_string().as_bytes()) {
+                Ok(_) => {},
+                Err(e) => {
+                    eprintln!("Failed to send HelloFromNode message to node {}: {e}", candidate_ip);
+                }
+            };
         }
     }
 
     pub fn accept_connections(shared_shard: Arc<Mutex<Shard>>, ip: String, accepting_port: String) {
-        let port = accepting_port.parse::<u64>().unwrap() + 1000;
-        println!("Attempting to bind listener to port: {}", port);
+        let port = match accepting_port.parse::<u64>() {
+            Ok(port) => port + 1000,
+            Err(_) => {
+                eprintln!("Failed to parse port number: {}", accepting_port);
+                return;
+            }
+        };
 
-        let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
+        let listener = match TcpListener::bind(format!("{}:{}", ip, port)) {
+            Ok(listener) => listener,
+            Err(e) => {
+                eprintln!("Failed to bind listener: {e}");
+                return;
+            }
+        };
 
         let shard = match shared_shard.lock() {
             Ok(shared_router) => shared_router,
@@ -174,9 +198,10 @@ impl Shard {
             if *must_stop {
                 println!("{color_red}STOPPED ACCEPT CONNECTIONS{style_reset}");
                 drop(listener);
+                
                 handles
                     .into_iter()
-                    .for_each(|handle| handle.join().unwrap());
+                    .for_each(|handle| _ = handle.join());
                 return;
             }
 
@@ -255,15 +280,9 @@ impl Shard {
 
             drop(must_stop);
 
-            // println!("LOOPING listen");
-
             // sleep for 1 millisecond to allow the stream to be ready to read
             thread::sleep(std::time::Duration::from_millis(1));
             let mut buffer = [0; 1024];
-
-            // println!("Before stream lock");
-
-            // println!("After stream lock");
 
             match stream.set_nonblocking(true) {
                 Ok(()) => {}
@@ -312,7 +331,13 @@ impl Shard {
                             "{color_bright_green}Received message: {message_string}{style_reset}"
                         );
                         println!("{color_bright_green}Sending response: {response}{style_reset}");
-                        stream.write_all(response.as_bytes()).unwrap();
+                        
+                        match stream.write_all(response.as_bytes()) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                eprintln!("Failed to write response: {e}");
+                            }
+                        }
                     }
                 }
                 Err(_e) => {
@@ -345,23 +370,29 @@ impl Shard {
     }
 
     fn handle_init_connection_message(&mut self, message: Message) -> Option<String> {
-        let router_info = message.get_data().node_info.unwrap();
+        let router_info = message.get_data().node_info?;
         self.router_info = Arc::new(Mutex::new(Some(router_info.clone())));
         println!("{color_bright_green}Received an InitConnection message{style_reset}");
-        let response_string = self.get_agreed_connection();
+        let response_string = self.get_agreed_connection()?;
         Some(response_string)
     }
 
     fn handle_memory_update_message(&mut self) -> Option<String> {
         println!("{color_bright_green}Received an AskMemoryUpdate message{style_reset}");
-        let response_string = self.get_memory_update_message();
+        let response_string = self.get_memory_update_message()?;
         Some(response_string)
     }
 
     fn handle_get_router_message(&mut self) -> Option<String> {
         let self_clone = self.clone();
         let router_info: Option<NodeInfo> = {
-            let router_info = self_clone.router_info.as_ref().try_lock().unwrap();
+            let router_info = match self_clone.router_info.as_ref().try_lock() {
+                Ok(router_info) => router_info.clone(),
+                Err(_) => {
+                    eprintln!("Failed to get router info");
+                    return None;
+                }
+            };
             router_info.clone()
         };
 
@@ -374,16 +405,28 @@ impl Shard {
         }
     }
 
-    fn get_agreed_connection(&self) -> String {
-        let memory_manager = self.memory_manager.as_ref().try_lock().unwrap();
+    fn get_agreed_connection(&self) -> Option<String> {
+        let memory_manager = match self.memory_manager.as_ref().try_lock() {
+            Ok(memory_manager) => memory_manager,
+            Err(_) => {
+                eprintln!("Failed to get memory manager");
+                return None;
+            }
+        };
         let memory_percentage = memory_manager.available_memory_perc;
-        let tables_max_id_clone = self.tables_max_id.as_ref().try_lock().unwrap().clone();
+        let tables_max_id_clone = match self.tables_max_id.as_ref().try_lock() {
+            Ok(tables_max_id) => tables_max_id.clone(),
+            Err(_) => {
+                eprintln!("Failed to get tables max id");
+                return None;
+            }
+        };
         let response_message = Message::new_agreed(memory_percentage, tables_max_id_clone);
 
-        response_message.to_string()
+        Some(response_message.to_string())
     }
 
-    fn get_memory_update_message(&mut self) -> String {
+    fn get_memory_update_message(&mut self) -> Option<String> {
         match self.update() {
             Ok(()) => {
                 println!("Memory updated successfully");
@@ -392,23 +435,46 @@ impl Shard {
                 eprintln!("Failed to update memory: {e:?}");
             }
         }
-        let memory_manager = self.memory_manager.as_ref().try_lock().unwrap();
+        let memory_manager = match self.memory_manager.as_ref().try_lock() {
+            Ok(memory_manager) => memory_manager,
+            Err(_) => {
+                eprintln!("Failed to get memory manager");
+                return None;
+            }
+        };
         let memory_percentage = memory_manager.available_memory_perc;
-        let tables_max_id_clone = self.tables_max_id.as_ref().try_lock().unwrap().clone();
+        let tables_max_id_clone = match self.tables_max_id.as_ref().try_lock() {
+            Ok(tables_max_id) => tables_max_id.clone(),
+            Err(_) => {
+                eprintln!("Failed to get tables max id");
+                return None;
+            }
+        };
         let response_message =
             Message::new_memory_update(memory_percentage, tables_max_id_clone);
 
-        response_message.to_string()
+        Some(response_message.to_string())
     }
 
     fn update(&mut self) -> Result<(), io::Error> {
         self.set_max_ids();
-        self.memory_manager.as_ref().try_lock().unwrap().update()
+        match self.memory_manager.as_ref().try_lock() {
+            Ok(mut memory_manager) => {
+                memory_manager.update()
+            }
+            Err(_) => {
+                eprintln!("Failed to get memory manager");
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Failed to get memory manager",
+                ));
+            }
+        }
     }
 
     // Set the max ids for all tables in tables_max_id
     fn set_max_ids(&mut self) {
-        let tables = self.get_all_tables();
+        let tables = self.get_all_tables_from_self();
         for table in tables {
             let query = format!("SELECT MAX(id) FROM {table}");
             if let Some(rows) = self.get_rows_for_query(&query) {
@@ -418,7 +484,13 @@ impl Shard {
                     eprintln!("Failed to get max id for table: {table}. Table might be empty",);
                     0
                 };
-                let mut tables_max_id = self.tables_max_id.as_ref().try_lock().unwrap();
+                let mut tables_max_id = match self.tables_max_id.as_ref().try_lock() {
+                    Ok(tables_max_id) => tables_max_id,
+                    Err(_) => {
+                        eprintln!("Failed to get tables max id");
+                        return;
+                    }
+                };
                 tables_max_id.insert(table, i64::from(max_id));
             }
         }

@@ -59,7 +59,16 @@ impl Client {
         loop {
             for node in &config.nodes {
                 candidate_ip = node.ip.clone();
-                candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
+
+                let node_port = match node.port.parse::<u64>() {
+                    Ok(port) => port,
+                    Err(_) => {
+                        eprintln!("Invalid port number in the config for {}", node.name);
+                        continue;
+                    }
+                };
+
+                candidate_port = node_port + 1000;
 
                 let mut candidate_stream =
                     match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
@@ -80,9 +89,13 @@ impl Client {
                 }
 
                 let response: &mut [u8] = &mut [0; 1024];
-                candidate_stream
-                    .set_read_timeout(Some(std::time::Duration::from_secs(3)))
-                    .unwrap();
+                match candidate_stream.set_read_timeout(Some(std::time::Duration::from_secs(3))) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("Failed to set read timeout: {:?}", e);
+                        continue;
+                    }
+                };
 
                 match candidate_stream.read(response) {
                     Ok(_) => {
@@ -127,8 +140,14 @@ impl Client {
     fn handle_router_id_message(response_message: message::Message) -> Option<TcpStream> {
         if let Some(node_info) = response_message.get_data().node_info {
             let node_ip = node_info.ip.clone();
-            let node_port = node_info.port.clone();
-            let connections_port = node_port.parse::<u64>().unwrap() + 1000;
+            let node_port = match node_info.port.clone().parse::<u64>() {
+                Ok(port) => port,
+                Err(_) => {
+                    eprintln!("Invalid port number in the config for the router");
+                    return None;
+                }
+            };
+            let connections_port = node_port + 1000;
 
             return match TcpStream::connect(format!("{}:{}", node_ip, connections_port)) {
                 Ok(router_stream) => {
@@ -158,7 +177,12 @@ impl Client {
         };
 
         if response_message.get_message_type() == message::MessageType::QueryResponse {
-            let rows = response_message.get_data().query.unwrap();
+            let rows = match response_message.get_data().query {
+                Some(query) => query,
+                None => {
+                    return;
+                }
+            };
             print_query_response(rows);
         }
     }
