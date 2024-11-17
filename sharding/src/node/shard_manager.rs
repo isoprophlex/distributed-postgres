@@ -54,18 +54,6 @@ impl ShardManager {
         }
     }
 
-    pub fn count(&self) -> usize {
-        let shards = match self.shards.lock() {
-            Ok(shards) => shards,
-            Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
-                return 0;
-            }
-        };
-
-        shards.len()
-    }
-
     /// Updates the memory of a shard and reorders the shards based on the new memory.
     /// If the memory is higher than the current top shard, it will become the new top shard.
     /// If the memory is lower than the current top shard, it will be placed in the correct position in the heap.

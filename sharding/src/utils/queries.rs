@@ -101,10 +101,6 @@ fn get_id_index(query: &str) -> Option<usize> {
     }
 }
 
-
-
-
-
 fn get_trimmed_id(query: &str, from: usize) -> String {
     let mut id = query[from..].trim();
     if id.ends_with(';') {
