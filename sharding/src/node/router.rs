@@ -702,7 +702,6 @@ impl Router {
 
         let Ok(response_message) = Message::from_string(&response_string) else {
             eprintln!("Failed to parse message from shard");
-            // TODO-SHARD: handle this situation, should this try again? What happens if we can't update the shard's memory in the shard_manager?
             return false;
         };
 
@@ -914,7 +913,7 @@ impl Router {
 
         query
     }
-    
+
     fn drop_all_tables(&mut self, tables: &[String]) {
         for table in tables {
             let drop_query = format!("DROP TABLE IF EXISTS {}", table);

@@ -66,7 +66,9 @@ impl ShardManager {
         }
     }
 
-    // TODO-SHARD: This is not efficient. Should we use a different data structure? Or maybe if the query affects all shards, we should just clear the heap and add them from scratch? This needs to be thinked through, because the router handles each of the shards separately.
+    // This is not the most efficient way. If you'd like to improve it, we have thought about options: using a different data structure, or if the query affects all shards, clear the heap and add them from scratch. This needs to be thinked through, because the router handles each of the shards separately.
+    // Anyway, we are out of time, so this is the best we can do for now.
+    /// Deletes a shard from the heap.
     fn delete(&mut self, shard_id: String) {
         if shard_id == self.peek().unwrap() {
             self.pop();
