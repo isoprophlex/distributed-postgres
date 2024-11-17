@@ -36,7 +36,7 @@ pub trait NodeRole {
     }
 
     fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
-        // Código de error de SQLSTATE para "relation does not exist"
+        // SQLSTATE Code Error for "relation does not exist"
         const UNDEFINED_TABLE_CODE: &str = "42P01";
 
         match self
@@ -217,7 +217,7 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                 };
                 match change_role(role.to_owned(), transmitter.clone()) {
                     Ok(_) => {
-                        println!("Role changing finished succesfully");
+                        println!("Role changing finished successfully");
                     }
                     Err(_) => {
                         println!("Error could not change role to {:?}", role);
@@ -325,8 +325,8 @@ fn init_router(ip: &str, port: &str) {
     let ip_clone = ip.to_string();
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
-        Router::wait_for_incomming_connections(&shared_router, ip_clone, port_clone);
-        println!("Router comes back from wait_for_incomming_connections");
+        Router::wait_for_incoming_connections(&shared_router, ip_clone, port_clone);
+        println!("Router comes back from wait_for_incoming_connections");
     });
 
     println!("Router node initializes");

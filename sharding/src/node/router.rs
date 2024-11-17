@@ -47,7 +47,7 @@ impl Router {
     }
 
     /// Listen for incoming connections from clients or new shards.
-    pub fn wait_for_incomming_connections(
+    pub fn wait_for_incoming_connections(
         shared_router: &Arc<Mutex<Router>>,
         ip: String,
         waiting_port: String,
@@ -57,7 +57,7 @@ impl Router {
 
         let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
 
-        println!("wait_for_incomming_connections");
+        println!("wait_for_incoming_connections");
 
         loop {
             let stopped = {
@@ -117,7 +117,7 @@ impl Router {
     // Listen for incoming messages
     pub fn listen(shared_router: &Arc<Mutex<Router>>, stream: &Arc<Mutex<TcpStream>>) {
         loop {
-            // Adquiere el bloqueo del router para verificar el estado 'stopped'
+            // Loscks the router to check the 'stopped' status
             let stopped = {
                 let router = match shared_router.lock() {
                     Ok(router) => router,
@@ -127,7 +127,7 @@ impl Router {
                     }
                 };
 
-                // Verifica el estado 'stopped' y suelta el bloqueo del router
+                // Checks the 'stopped' status and releases the router lock
                 let router_clone = *router.stopped.lock().unwrap();
                 router_clone
             };
@@ -137,11 +137,11 @@ impl Router {
                 return;
             }
 
-            // Espera brevemente para permitir que el stream esté listo para leer
+            // Waits briefly to allow the stream to be ready for reading
             thread::sleep(std::time::Duration::from_millis(1));
             let mut buffer = [0; 1024];
 
-            // Adquiere el bloqueo del stream y establece el tiempo de espera de lectura
+            // Locks the stream and sets the read timeout
             let mut stream = match stream.lock() {
                 Ok(stream) => stream,
                 Err(_) => {
@@ -160,24 +160,24 @@ impl Router {
                         continue;
                     }
 
-                    // Convierte el buffer a String
+                    // Parses the buffer to a String
                     let message_string = String::from_utf8_lossy(&buffer);
 
-                    // Adquiere el bloqueo del router para obtener y enviar la respuesta
+                    // Locks the router to get and send the response
                     let response = {
                         let mut router = shared_router.lock().unwrap();
                         router.get_response_message(&message_string).clone()
                     };
 
                     if let Some(response) = response {
-                        // Envía la respuesta a través del stream (ya está bloqueado)
+                        // Sends the response through the stream (already locked)
                         if let Err(e) = stream.write_all(response.as_bytes()) {
                             eprintln!("Failed to send response: {:?}", e);
                         }
                     }
                 }
                 Err(_) => {
-                    // No se pudo leer del stream, ignóralo
+                    // Could not read from stream, continue
                 }
             }
         }

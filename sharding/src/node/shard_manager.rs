@@ -43,7 +43,7 @@ impl ShardManager {
     /// Updates the memory of a shard and reorders the shards based on the new memory.
     /// If the memory is higher than the current top shard, it will become the new top shard.
     /// If the memory is lower than the current top shard, it will be placed in the correct position in the heap.
-    /// If the memoty is zero, the shard will be at the base of the heap until it is updated once again.
+    /// If the memory is zero, the shard will be at the base of the heap until it is updated once again.
     pub fn update_shard_memory(&mut self, memory: f64, shard_id: String) {
         println!(
             "{color_bright_green}Updating shard memory: {} to {}{style_reset}",
