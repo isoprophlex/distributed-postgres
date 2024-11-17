@@ -8,7 +8,7 @@ use std::{
 
 use super::super::utils::node_config::*;
 use super::node::*;
-use crate::utils::common::Channel;
+use crate::utils::{common::Channel, queries::MAX_PAGE_SIZE};
 use crate::{
     node::messages::{message, node_info::NodeInfo},
     utils::queries::print_query_response,
@@ -254,7 +254,7 @@ impl NodeRole for Client {
         }
 
         // Preparar el buffer de respuesta
-        let mut buffer: [u8; 1024] = [0; 1024];
+        let mut buffer: [u8; MAX_PAGE_SIZE] = [0; MAX_PAGE_SIZE];
 
         // Intentar leer la respuesta y reconectar si falla
         match stream.read(&mut buffer) {
