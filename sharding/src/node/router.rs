@@ -4,10 +4,12 @@ use rust_decimal::Decimal;
 extern crate users;
 use super::messages::node_info::find_name_for_node;
 use super::node::NodeRole;
+use super::send_query_result::SendQueryError;
 use super::shard_manager::ShardManager;
 use super::tables_id_info::TablesIdInfo;
 use crate::node::messages::message::{Message, MessageType};
 use crate::node::messages::node_info::NodeInfo;
+use crate::node::send_query_result::{is_connection_closed, is_undefined_table};
 use crate::utils::common::ConvertToString;
 use crate::utils::common::{connect_to_node, Channel};
 use crate::utils::node_config::{get_nodes_config, Node};
@@ -285,6 +287,9 @@ impl Router {
         });
 
         self.duplicate_tables_into(&node_info.port);
+        if self.shard_manager.count() == 1 {
+            self.redistribute_data();
+        }
         Some("OK".to_string())
     }
 
@@ -296,7 +301,7 @@ impl Router {
         for table in tables {
             let create_query = self.generate_create_table_query(&table, None);
             if !create_query.is_empty() {
-                self.send_query_to_shard(shard_id, &create_query, true);
+                _ = self.send_query_to_shard(shard_id, &create_query, true);
             }
         }
     }
@@ -716,7 +721,7 @@ impl NodeRole for Router {
 
         let (shards, affects_memory, query) = self.get_data_needed_from(received_query);
 
-        // If there are no shards available, the router uses its own backend to execute the query
+        // If there are no shards available, the router uses its own backend to execute the query and return the response.
         if shards.is_empty() {
             return match self.send_query_to_backend(received_query) {
                 Some(response) => Some(response),
@@ -737,21 +742,26 @@ impl NodeRole for Router {
         let rows = Arc::new(Mutex::new(Vec::new()));
         let mut handles = Vec::new();
 
-        for shard_id in shards {
+        for shard_id in shards.clone() {
             let mut self_clone = self.clone();
             let query_clone = query.clone();
             let rows_clone = rows.clone();
             let shards_repsonses_clone = shards_responses.clone();
 
-            let _shard_response_handle = thread::spawn(move || {
-                let shard_response =
-                    self_clone.send_query_to_shard(&shard_id, &query_clone, affects_memory);
+            let _shard_response_handle = thread::spawn(move || -> Result<(), (SendQueryError, Option<String>)> {
+                let shard_response = match self_clone.send_query_to_shard(&shard_id, &query_clone, affects_memory) {
+                        Ok(rows) => rows,
+                        Err(send_query_error) => {
+                            return Err(send_query_error);
+                        }
+                    };
+
                 if !shard_response.is_empty() {
                     let mut shards_responses = match shards_repsonses_clone.lock() {
                         Ok(shards_responses) => shards_responses,
                         Err(_) => {
                             eprintln!("Failed to get shards responses lock");
-                            return;
+                            return Err((SendQueryError::Other("Failed to get shards responses lock".to_string()), None));
                         }
                     };
 
@@ -761,20 +771,55 @@ impl NodeRole for Router {
                         Ok(rows) => rows,
                         Err(_) => {
                             eprintln!("Failed to get rows lock");
-                            return;
+                            return Err((SendQueryError::Other("Failed to get rows lock".to_string()), None));
                         }
                     };
                     rows_lock.extend(shard_response);
                 }
+                return Ok(());
             });
             handles.push(_shard_response_handle);
         }
 
         // Wait for all threads to finish
         for handle in handles {
-            _ = handle.join();
+            println!("handle.join()");
+            match handle.join() {
+                Ok(result) => {
+                    match result {
+                        Ok(_) => {},
+                        Err((err, shard_id)) => {
+                            println!("Error in handle.join()");
+                            let client_was_closed = err == SendQueryError::ClientIsClosed;
+                            let shards_count = shards.len();
+
+                            if let Some(shard_id) = shard_id {
+                                // If the shard is closed, the router will remove it from the shards list
+                                if client_was_closed {
+                                    self.delete_shard(&shard_id);
+                                }
+                            }
+
+                            // If there was only one shard and it was closed, the router will execute the query itself
+                            if shards_count == 1 && client_was_closed {
+                                return match self.send_query_to_backend(&query) {
+                                    Some(response) => Some(response),
+                                    None => {
+                                        return None;
+                                    }
+                                };
+                            }
+                        },
+                    }
+                }
+                Err(_) => {
+                    // The thread panicked
+                    println!("Thread panicked");
+                }
+            };
         }
 
+        println!("All threads finished");
         let responses = match shards_responses.lock() {
             Ok(shards_responses) => shards_responses.clone(),
             Err(_) => {
@@ -887,17 +932,14 @@ impl Router {
         self.init_message_exchange(&message, &mut writable_stream, shard_id);
     }
 
-    fn send_query_to_shard(&mut self, shard_id: &str, query: &str, update: bool) -> Vec<Row> {
-        // SQLSTATE code error for "relation does not exist"
-        const UNDEFINED_TABLE_CODE: &str = "42P01";
-
+    fn send_query_to_shard(&mut self, shard_id: &str, query: &str, update: bool) -> Result<Vec<Row>, (SendQueryError,Option<String>)> {
         let self_clone = self.clone();
 
         let mut shards = match self_clone.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
                 eprintln!("Failed to get shards");
-                return Vec::new();
+                return Err((SendQueryError::Other("Failed to get shards".to_string()), None));
             }
         };
 
@@ -905,16 +947,18 @@ impl Router {
         if let Some(shard) = shards.get_mut(shard_id) {
             let rows = match shard.query(query, &[]) {
                 Ok(rows) => rows,
-                Err(e) => {
+                Err(error) => {
                     eprintln!("Failed to send the query to the shard: ");
-                    if let Some(db_error) = e.as_db_error() {
-                        if db_error.code().code() == UNDEFINED_TABLE_CODE {
-                            eprint!("Relation (table) does not exist\n");
-                        }
+                    if is_undefined_table(&error) {
+                        eprint!("Relation (table) does not exist\n");
+                        return Err((SendQueryError::UndefinedTable, None));
+                    } else if is_connection_closed(&error) {
+                        println!("Connection closed with shard {shard_id}");
+                        return Err((SendQueryError::ClientIsClosed, Some(shard_id.to_string())));
                     } else {
-                        eprint!("{e:?}\n");
+                        eprint!("{error:?}\n");
                     }
-                    return Vec::new();
+                    return Err((SendQueryError::Other(format!("{error:?}")), None));
                 }
             };
 
@@ -922,10 +966,10 @@ impl Router {
                 self.ask_for_memory_update(shard_id);
             }
 
-            return rows;
+            return Ok(rows);
         }
         eprintln!("Shard {shard_id:?} not found");
-        Vec::new()
+        Err((SendQueryError::Other("Shard not found".to_string()), None))
     }
 
     fn send_query_to_backend(&mut self, query: &str) -> Option<String> {
@@ -935,6 +979,21 @@ impl Router {
         let rows = self.get_rows_for_query(query)?;
         let response = format_rows_without_offset(rows);
         Some(response)
+    }
+
+    fn delete_shard(&mut self, shard_id: &str) {
+        println!("Deleting shard {shard_id}");
+        let mut shard_manager = self.shard_manager.as_ref().clone();
+
+        shard_manager.delete(shard_id.to_string());
+        let mut shards = match self.shards.lock() {
+            Ok(shards) => shards,
+            Err(_) => {
+                eprintln!("Failed to get shards");
+                return;
+            }
+        };
+        shards.swap_remove(shard_id);
     }
 }
 
@@ -1003,16 +1062,15 @@ impl Router {
                                 continue;
                             }
                         };
-                    self.send_query_to_shard(&shard_id, table_starting_query, false);
+                    _ = self.send_query_to_shard(&shard_id, table_starting_query, false);
 
                     // Send the actual insert query
-                    self.send_query_to_shard(&shard_id, &formatted_query, true);
+                    _ = self.send_query_to_shard(&shard_id, &formatted_query, true);
                 }
             }
         }
-
         // Drop all tables from router backend
-        self.drop_all_tables(&tables);
+        self.empty_tables(&tables);
     }
 
     fn generate_create_table_query(&mut self, table: &str, shard_id: Option<String>) -> String {
@@ -1026,7 +1084,13 @@ impl Router {
 
         let rows = if let Some(shard) = shard_id {
             println!("Sending query to shard {shard}: {query}");
-            self.send_query_to_shard(&shard, &query, false)
+            match self.send_query_to_shard(&shard, &query, false) {
+                Ok(rows) => rows,
+                Err(_) => {
+                    eprintln!("Failed to get rows for query");
+                    Vec::new()
+                }
+            }
         } else {
             match self.get_rows_for_query(&query) {
                 Some(rows) => rows,
@@ -1110,11 +1174,11 @@ impl Router {
         query
     }
 
-    fn drop_all_tables(&mut self, tables: &[String]) {
+    fn empty_tables(&mut self, tables: &[String]) {
         for table in tables {
-            let drop_query = format!("DROP TABLE IF EXISTS {}", table);
+            let drop_query = format!("DELETE * FROM {}", table);
             let _ = self.get_rows_for_query(&drop_query);
-            println!("Dropped table {}", table);
+            println!("Table {} was emptied", table);
         }
     }
 }
