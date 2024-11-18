@@ -55,7 +55,6 @@ impl Router {
         ip: String,
         waiting_port: String,
     ) {
-
         let port_number = match waiting_port.parse::<u64>() {
             Ok(port) => port,
             Err(_) => {
@@ -236,7 +235,7 @@ impl Router {
             }
         }
     }
-    
+
     fn handle_query_message(&mut self, message: &Message) -> Option<String> {
         let query = match message.get_data().query {
             Some(query) => query,
@@ -531,7 +530,7 @@ impl Router {
             }
         };
         let memory_size = payload;
-        
+
         let max_ids_info = match message.get_data().max_ids {
             Some(max_ids_info) => max_ids_info,
             None => {
@@ -569,12 +568,14 @@ impl Router {
 
     /// Establishes a health connection with the node with the given ip and port, returning a Channel.
     fn get_shard_channel(node_ip: &str, node_port: &str) -> Result<Channel, io::Error> {
-
         let port_number = match node_port.parse::<u64>() {
             Ok(port) => port,
             Err(_) => {
                 eprintln!("Failed to parse port number");
-                return Err(io::Error::new(io::ErrorKind::Other, "Failed to parse port number"));
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Failed to parse port number",
+                ));
             }
         };
 
@@ -681,7 +682,11 @@ impl Router {
         )
     }
 
-    fn format_response(&self, shards_responses: IndexMap<String, Vec<Row>>, query: &str) -> Option<String> {
+    fn format_response(
+        &self,
+        shards_responses: IndexMap<String, Vec<Row>>,
+        query: &str,
+    ) -> Option<String> {
         let Some(table_name) = get_table_name_from_query(query) else {
             eprintln!("Failed to get table name from query");
             return None;
@@ -748,36 +753,49 @@ impl NodeRole for Router {
             let rows_clone = rows.clone();
             let shards_repsonses_clone = shards_responses.clone();
 
-            let _shard_response_handle = thread::spawn(move || -> Result<(), (SendQueryError, Option<String>)> {
-                let shard_response = match self_clone.send_query_to_shard(&shard_id, &query_clone, affects_memory) {
+            let _shard_response_handle =
+                thread::spawn(move || -> Result<(), (SendQueryError, Option<String>)> {
+                    let shard_response = match self_clone.send_query_to_shard(
+                        &shard_id,
+                        &query_clone,
+                        affects_memory,
+                    ) {
                         Ok(rows) => rows,
                         Err(send_query_error) => {
                             return Err(send_query_error);
                         }
                     };
 
-                if !shard_response.is_empty() {
-                    let mut shards_responses = match shards_repsonses_clone.lock() {
-                        Ok(shards_responses) => shards_responses,
-                        Err(_) => {
-                            eprintln!("Failed to get shards responses lock");
-                            return Err((SendQueryError::Other("Failed to get shards responses lock".to_string()), None));
-                        }
-                    };
+                    if !shard_response.is_empty() {
+                        let mut shards_responses = match shards_repsonses_clone.lock() {
+                            Ok(shards_responses) => shards_responses,
+                            Err(_) => {
+                                eprintln!("Failed to get shards responses lock");
+                                return Err((
+                                    SendQueryError::Other(
+                                        "Failed to get shards responses lock".to_string(),
+                                    ),
+                                    None,
+                                ));
+                            }
+                        };
 
-                    shards_responses.insert(shard_id, shard_response.clone());
+                        shards_responses.insert(shard_id, shard_response.clone());
 
-                    let mut rows_lock = match rows_clone.lock() {
-                        Ok(rows) => rows,
-                        Err(_) => {
-                            eprintln!("Failed to get rows lock");
-                            return Err((SendQueryError::Other("Failed to get rows lock".to_string()), None));
-                        }
-                    };
-                    rows_lock.extend(shard_response);
-                }
-                return Ok(());
-            });
+                        let mut rows_lock = match rows_clone.lock() {
+                            Ok(rows) => rows,
+                            Err(_) => {
+                                eprintln!("Failed to get rows lock");
+                                return Err((
+                                    SendQueryError::Other("Failed to get rows lock".to_string()),
+                                    None,
+                                ));
+                            }
+                        };
+                        rows_lock.extend(shard_response);
+                    }
+                    return Ok(());
+                });
             handles.push(_shard_response_handle);
         }
 
@@ -787,9 +805,13 @@ impl NodeRole for Router {
             match handle.join() {
                 Ok(result) => {
                     match result {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err((err, shard_id)) => {
-                            table_errors += if err == SendQueryError::UndefinedTable {1} else {0};
+                            table_errors += if err == SendQueryError::UndefinedTable {
+                                1
+                            } else {
+                                0
+                            };
                             let client_was_closed = err == SendQueryError::ClientIsClosed;
                             let shards_count = shards.len();
 
@@ -809,7 +831,7 @@ impl NodeRole for Router {
                                     }
                                 };
                             }
-                        },
+                        }
                     }
                 }
                 Err(_) => {
@@ -884,7 +906,7 @@ impl Router {
 
         Some(shard_comm_channel.stream.clone())
     }
-    
+
     fn init_message_exchange(
         &mut self,
         message: &Message,
@@ -897,7 +919,7 @@ impl Router {
                 eprintln!("Failed to write message to shard {shard_id}");
                 return false;
             }
-        };  
+        };
         let mut response: [u8; 1024] = [0; 1024];
 
         // Read and handle message
@@ -936,14 +958,22 @@ impl Router {
         self.init_message_exchange(&message, &mut writable_stream, shard_id);
     }
 
-    fn send_query_to_shard(&mut self, shard_id: &str, query: &str, update: bool) -> Result<Vec<Row>, (SendQueryError,Option<String>)> {
+    fn send_query_to_shard(
+        &mut self,
+        shard_id: &str,
+        query: &str,
+        update: bool,
+    ) -> Result<Vec<Row>, (SendQueryError, Option<String>)> {
         let self_clone = self.clone();
 
         let mut shards = match self_clone.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
                 eprintln!("Failed to get shards");
-                return Err((SendQueryError::Other("Failed to get shards".to_string()), None));
+                return Err((
+                    SendQueryError::Other("Failed to get shards".to_string()),
+                    None,
+                ));
             }
         };
 

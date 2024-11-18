@@ -33,8 +33,6 @@ pub struct Message {
 
 /// Implementing Display for Message
 impl fmt::Debug for Message {
-    
-    
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Message")
             .field("message_type", &self.message_type)
@@ -211,7 +209,6 @@ impl Message {
 }
 
 impl Message {
-
     // Serialize the Message to a String
     pub fn to_string(&self) -> String {
         let mut result = String::new();
@@ -299,7 +296,7 @@ impl Message {
             Some(payload) => match payload.parse() {
                 Ok(payload) => Some(payload),
                 Err(_) => return Err("Invalid payload"),
-            }
+            },
             None => None,
         };
 

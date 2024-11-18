@@ -32,7 +32,7 @@ pub struct Shard {
 }
 
 use std::fmt;
-impl fmt::Debug for Shard {  
+impl fmt::Debug for Shard {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Shard")
             .field("ip", &self.ip)
@@ -143,9 +143,12 @@ impl Shard {
             println!("{color_bright_green}Sending HelloFromNode message to {candidate_ip}:{candidate_port}{style_reset}");
 
             match candidate_stream.write_all(hello_message.to_string().as_bytes()) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
-                    eprintln!("Failed to send HelloFromNode message to node {}: {e}", candidate_ip);
+                    eprintln!(
+                        "Failed to send HelloFromNode message to node {}: {e}",
+                        candidate_ip
+                    );
                 }
             };
         }
@@ -198,10 +201,8 @@ impl Shard {
             if *must_stop {
                 println!("{color_red}STOPPED ACCEPT CONNECTIONS{style_reset}");
                 drop(listener);
-                
-                handles
-                    .into_iter()
-                    .for_each(|handle| _ = handle.join());
+
+                handles.into_iter().for_each(|handle| _ = handle.join());
                 return;
             }
 
@@ -331,7 +332,7 @@ impl Shard {
                             "{color_bright_green}Received message: {message_string}{style_reset}"
                         );
                         println!("{color_bright_green}Sending response: {response}{style_reset}");
-                        
+
                         match stream.write_all(response.as_bytes()) {
                             Ok(_) => {}
                             Err(e) => {
@@ -450,8 +451,7 @@ impl Shard {
                 return None;
             }
         };
-        let response_message =
-            Message::new_memory_update(memory_percentage, tables_max_id_clone);
+        let response_message = Message::new_memory_update(memory_percentage, tables_max_id_clone);
 
         Some(response_message.to_string())
     }
@@ -459,9 +459,7 @@ impl Shard {
     fn update(&mut self) -> Result<(), io::Error> {
         self.set_max_ids();
         match self.memory_manager.as_ref().try_lock() {
-            Ok(mut memory_manager) => {
-                memory_manager.update()
-            }
+            Ok(mut memory_manager) => memory_manager.update(),
             Err(_) => {
                 eprintln!("Failed to get memory manager");
                 return Err(io::Error::new(

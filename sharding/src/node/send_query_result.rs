@@ -1,5 +1,5 @@
-use std::fmt;
 use postgres::error::Error;
+use std::fmt;
 
 /// SQLSTATE code error for "relation does not exist"
 const UNDEFINED_TABLE_CODE: &str = "42P01";
@@ -8,7 +8,7 @@ const UNDEFINED_TABLE_CODE: &str = "42P01";
 pub enum SendQueryError {
     ClientIsClosed,
     UndefinedTable,
-    Other(String), 
+    Other(String),
 }
 
 impl fmt::Display for SendQueryError {
@@ -23,7 +23,6 @@ impl fmt::Display for SendQueryError {
 
 impl std::error::Error for SendQueryError {}
 
-
 pub fn is_connection_closed(err: &Error) -> bool {
     let err = format!("{}", err);
     println!("Analyzing error: {}", err);
@@ -32,7 +31,7 @@ pub fn is_connection_closed(err: &Error) -> bool {
 
 pub fn is_undefined_table(err: &Error) -> bool {
     if let Some(db_error) = err.as_db_error() {
-        return db_error.code().code() == UNDEFINED_TABLE_CODE
+        return db_error.code().code() == UNDEFINED_TABLE_CODE;
     }
-    return false
-}  
+    return false;
+}

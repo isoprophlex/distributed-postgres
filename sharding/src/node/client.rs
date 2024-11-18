@@ -162,11 +162,11 @@ impl Client {
                     eprintln!("Failed to connect to the router stream: {:?}", e);
                     None
                 }
-            }
+            };
         }
         None
     }
-    
+
     fn handle_received_message(buffer: &mut [u8]) {
         let message_string = String::from_utf8_lossy(&buffer);
         let response_message = match message::Message::from_string(&message_string) {
@@ -287,7 +287,6 @@ impl NodeRole for Client {
         }
     }
 
-    
     fn stop(&mut self) {
         // Not implemented
     }

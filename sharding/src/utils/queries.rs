@@ -98,7 +98,7 @@ fn get_id_index(query: &str) -> Option<usize> {
         Some(index4 + offset4)
     } else {
         None
-    }
+    };
 }
 
 fn get_trimmed_id(query: &str, from: usize) -> String {
@@ -144,7 +144,6 @@ pub trait ConvertRowToString {
 }
 
 impl ConvertRowToString for Row {
-
     fn convert_to_string(&self, separator: &str) -> String {
         let mut result = String::new();
         // If is empty, return empty string
@@ -175,7 +174,6 @@ impl ConvertRowToString for Row {
 }
 
 impl ConvertToStringOffset for Row {
-    
     fn convert_to_string_with_offset(&self, offset: i64) -> Option<String> {
         let mut result = String::new();
         // If is empty, return empty string
@@ -223,7 +221,6 @@ impl ConvertToStringOffset for Row {
 }
 
 impl ConvertToString for Vec<Row> {
-
     fn convert_to_string(&self) -> String {
         let mut result = String::new();
         // If is empty, return empty string
@@ -272,11 +269,6 @@ pub fn print_query_response(response: String) {
         println!("{}", line);
     }
 }
-
-
-
-
-
 
 pub fn format_rows_without_offset(rows: Vec<Row>) -> String {
     let mut result = String::new();

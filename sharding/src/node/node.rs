@@ -17,10 +17,10 @@ use tokio::task::LocalSet;
 
 pub trait NodeRole {
     fn backend(&self) -> Arc<Mutex<postgres::Client>>;
-    
+
     /// Sends a query to the shard group
     fn send_query(&mut self, query: &str) -> Option<String>;
-    
+
     fn stop(&mut self);
 
     fn get_all_tables_from_self(&mut self) -> Vec<String> {
@@ -36,7 +36,7 @@ pub trait NodeRole {
         }
         tables
     }
-    
+
     fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
         // SQLSTATE Code Error for "relation does not exist"
         const UNDEFINED_TABLE_CODE: &str = "42P01";
@@ -50,8 +50,7 @@ pub trait NodeRole {
             }
         };
 
-        match backend_lock.query(query, &[])
-        {
+        match backend_lock.query(query, &[]) {
             Ok(rows) => {
                 print_rows(rows.clone());
                 Some(rows)
@@ -115,16 +114,12 @@ pub fn get_node_instance() -> &'static mut NodeInstance {
 pub fn get_node_role() -> &'static mut dyn NodeRole {
     unsafe {
         match NODE_INSTANCE.as_mut() {
-            Some(node_instance) => {
-                match node_instance.instance.as_mut() {
-                    Some(instance) => {
-                        instance.as_mut()
-                    }
-                    None => {
-                        panic!("Node instance not initialized");
-                    }
+            Some(node_instance) => match node_instance.instance.as_mut() {
+                Some(instance) => instance.as_mut(),
+                None => {
+                    panic!("Node instance not initialized");
                 }
-            }
+            },
             None => {
                 panic!("Node instance not initialized");
             }
@@ -212,11 +207,8 @@ async fn new_raft_instance(
         }
     };
 
-    let mut raft_module = raft::raft_module::RaftModule::new(
-        node_id.clone(),
-        ip.to_string(),
-        port_number
-    );
+    let mut raft_module =
+        raft::raft_module::RaftModule::new(node_id.clone(), ip.to_string(), port_number);
 
     // This nevers comes back, unless the node is the last one in the config file
     raft_module
