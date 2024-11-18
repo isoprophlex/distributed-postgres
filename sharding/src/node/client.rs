@@ -5,7 +5,7 @@ use std::{
     net::TcpStream,
     sync::{Arc, Mutex},
 };
-
+use std::time::Duration;
 use super::super::utils::node_config::*;
 use super::node::*;
 use crate::utils::common::Channel;
@@ -80,7 +80,7 @@ impl Client {
 
                 let response: &mut [u8] = &mut [0; 1024];
                 candidate_stream
-                    .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                    .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();
 
                 match candidate_stream.read(response) {
@@ -120,6 +120,7 @@ impl Client {
                 println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
                 ran_more_than_once = true;
             }
+            std::thread::sleep(std::time::Duration::from_secs(5));
         }
     }
 
@@ -129,22 +130,22 @@ impl Client {
             let node_port = node_info.port.clone();
             let connections_port = node_port.parse::<u64>().unwrap() + 1000;
 
-            match TcpStream::connect(format!("{}:{}", node_ip, connections_port)) {
+            return match TcpStream::connect(format!("{}:{}", node_ip, connections_port)) {
                 Ok(router_stream) => {
                     println!(
                         "{color_bright_green}Connected to router stream {}:{}{style_reset}",
                         node_ip,
                         connections_port.to_string()
                     );
-                    return Some(router_stream);
+                    Some(router_stream)
                 }
                 Err(e) => {
                     eprintln!("Failed to connect to the router stream: {:?}", e);
-                    return None;
+                    None
                 }
             }
         }
-        return None;
+        None
     }
 
     fn handle_received_message(buffer: &mut [u8]) {
@@ -254,7 +255,6 @@ impl NodeRole for Client {
                             return None;
                         }
                     };
-                    _ = stream.write_all(message.to_string().as_bytes());
                 } else {
                     eprintln!("No valid router found during reconnection.");
                 }
