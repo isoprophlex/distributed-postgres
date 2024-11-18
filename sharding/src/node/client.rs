@@ -58,6 +58,12 @@ impl Client {
 
         loop {
             for node in &config.nodes {
+
+                if !ran_more_than_once {
+                    println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
+                    ran_more_than_once = true;
+                }
+
                 candidate_ip = node.ip.clone();
 
                 let node_port = match node.port.parse::<u64>() {
@@ -88,7 +94,6 @@ impl Client {
                     continue;
                 }
 
-                let response: &mut [u8] = &mut [0; 1024];
                 match candidate_stream.set_read_timeout(Some(std::time::Duration::from_secs(3))) {
                     Ok(_) => {}
                     Err(e) => {
@@ -96,43 +101,53 @@ impl Client {
                         continue;
                     }
                 };
+                
+                loop {
+                    if !ran_more_than_once {
+                        println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
+                        ran_more_than_once = true;
+                    }
+                    
+                    let response: &mut [u8] = &mut [0; 1024];
+                    match candidate_stream.read(response) {
+                        Ok(_) => {},
+                        Err(_) => {
+                            break;
+                        }
+                    };
 
-                match candidate_stream.read(response) {
-                    Ok(_) => {
-                        let response_str = String::from_utf8_lossy(response);
-                        if let Ok(response_message) = message::Message::from_string(&response_str) {
-                            match response_message.get_message_type() {
-                                message::MessageType::RouterId => {
-                                    match Client::handle_router_id_message(response_message) {
-                                        Some(router_stream) => {
-                                            return Some(router_stream);
-                                        }
-                                        None => {
-                                            continue;
-                                        }
-                                    }
+                    let response_str = String::from_utf8_lossy(response);
+                    let response_message = match message::Message::from_string(&response_str) {
+                        Ok(message) => message,
+                        Err(_) => {
+                            eprintln!("Invalid response from node.");
+                            break;
+                        }
+                    };
+                    
+                    match response_message.get_message_type() {
+                        message::MessageType::RouterId => {
+                            match Client::handle_router_id_message(response_message) {
+                                Some(router_stream) => {
+                                    return Some(router_stream);
                                 }
-                                message::MessageType::NoRouterData => {
-                                    // if no router data is found, the network might be in the process of going live.
-                                    // wait for a while to allow to elect a leader and try again.
-                                    std::thread::sleep(std::time::Duration::from_secs(3));
-                                    continue;
-                                }
-                                _ => {
-                                    eprintln!("Invalid response from node.");
+                                None => {
                                     continue;
                                 }
                             }
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to read response from node: {:?}", e);
+                        message::MessageType::NoRouterData => {
+                            // if no router data is found, the network might be in the process of going live.
+                            // wait for a while to allow to elect a leader and try again.
+                            std::thread::sleep(std::time::Duration::from_secs(3));
+                            continue;
+                        }
+                        _ => {
+                            eprintln!("Invalid response from node.");
+                            continue;
+                        }
                     }
                 }
-            }
-            if !ran_more_than_once {
-                println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
-                ran_more_than_once = true;
             }
         }
     }
@@ -158,8 +173,7 @@ impl Client {
                     );
                     return Some(router_stream);
                 }
-                Err(e) => {
-                    eprintln!("Failed to connect to the router stream: {:?}", e);
+                Err(_) => {
                     None
                 }
             };
@@ -272,13 +286,7 @@ impl NodeRole for Client {
                         stream: Arc::new(Mutex::new(new_stream)),
                     };
                     println!("{color_bright_green}Reconnected to new router{style_reset}");
-                    stream = match self.router_postgres_client.stream.lock() {
-                        Ok(stream) => stream,
-                        Err(e) => {
-                            eprintln!("Failed to lock the new stream: {:?}", e);
-                            return None;
-                        }
-                    };
+                    return self.send_query(query);
                 } else {
                     eprintln!("No valid router found during reconnection.");
                 }
