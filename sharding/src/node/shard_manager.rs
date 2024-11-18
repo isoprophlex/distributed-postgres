@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use inline_colorization::*;
 use std::{
     cmp::Ordering,
     collections::BinaryHeap,
@@ -26,41 +27,91 @@ impl ShardManager {
             key: value,
             value: shard_id,
         };
-        let mut shards = self.shards.lock().unwrap();
+        let mut shards = match self.shards.lock() {
+            Ok(shards) => shards,
+            Err(_) => {
+                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                return;
+            }
+        };
         shards.push(object);
     }
 
     pub fn peek(&self) -> Option<String> {
-        match self.shards.lock().unwrap().peek() {
+        let shards = match self.shards.lock() {
+            Ok(shards) => shards,
+            Err(_) => {
+                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                return None;
+            }
+        };
+
+        match shards.peek() {
             Some(object) => Some(object.value.clone()),
             None => None,
         }
     }
 
+    pub fn count(&self) -> usize {
+        let shards = match self.shards.lock() {
+            Ok(shards) => shards,
+            Err(_) => {
+                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                return 0;
+            }
+        };
+
+        shards.len()
+    }
+
     /// Updates the memory of a shard and reorders the shards based on the new memory.
     /// If the memory is higher than the current top shard, it will become the new top shard.
     /// If the memory is lower than the current top shard, it will be placed in the correct position in the heap.
-    /// If the memoty is zero, the shard will be at the base of the heap until it is updated once again.
+    /// If the memory is zero, the shard will be at the base of the heap until it is updated once again.
     pub fn update_shard_memory(&mut self, memory: f64, shard_id: String) {
         self.delete(shard_id.clone());
         self.add_shard(memory, shard_id);
     }
 
     fn pop(&mut self) -> Option<String> {
-        match self.shards.lock().unwrap().pop() {
+        let mut shards = match self.shards.lock() {
+            Ok(shards) => shards,
+            Err(_) => {
+                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                return None;
+            }
+        };
+
+        match shards.pop() {
             Some(object) => Some(object.value),
             None => None,
         }
     }
 
-    // TODO-SHARD: This is not efficient. Should we use a different data structure? Or maybe if the query affects all shards, we should just clear the heap and add them from scratch? This needs to be thinked through, because the router handles each of the shards separately.
-    fn delete(&mut self, shard_id: String) {
-        if shard_id == self.peek().unwrap() {
+    // This is not the most efficient way. If you'd like to improve it, we have thought about options: using a different data structure, or if the query affects all shards, clear the heap and add them from scratch. This needs to be thinked through, because the router handles each of the shards separately.
+    // Anyway, we are out of time, so this is the best we can do for now.
+    /// Deletes a shard from the heap.
+    pub fn delete(&mut self, shard_id: String) {
+        let peeked_shard_id = match self.peek() {
+            Some(shard_id) => shard_id,
+            None => {
+                return;
+            }
+        };
+
+        if shard_id == peeked_shard_id {
             self.pop();
             return;
         }
 
-        let mut shards = self.shards.lock().unwrap();
+        let mut shards = match self.shards.lock() {
+            Ok(shards) => shards,
+            Err(_) => {
+                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                return;
+            }
+        };
+
         let mut new_shards = BinaryHeap::new();
 
         while let Some(shard) = shards.pop() {
@@ -74,12 +125,45 @@ impl ShardManager {
     }
 
     pub fn save_max_ids_for_shard(&mut self, shard_id: String, tables_id_info: TablesIdInfo) {
-        let mut shard_max_ids = self.shard_max_ids.lock().unwrap();
+        let shard_max_ids = match self.shard_max_ids.lock() {
+            Ok(shard_max_ids) => shard_max_ids,
+            Err(_) => {
+                println!("{color_bright_red}Failed to lock shard_max_ids{style_reset}");
+                return;
+            }
+        };
+        let mut shard_max_ids = shard_max_ids;
         shard_max_ids.insert(shard_id, tables_id_info);
     }
 
+    pub fn get_table_names_for_all(&self) -> Vec<String> {
+        let shard_max_ids = match self.shard_max_ids.lock() {
+            Ok(shard_max_ids) => shard_max_ids,
+            Err(_) => {
+                println!("{color_bright_red}Failed to lock shard_max_ids{style_reset}");
+                return Vec::new();
+            }
+        };
+
+        let mut table_names = Vec::new();
+        for tables_id_info in shard_max_ids.values() {
+            for table_name in tables_id_info.keys() {
+                table_names.push(table_name.clone());
+            }
+        }
+
+        table_names
+    }
+
     pub fn get_max_ids_for_shard_table(&self, shard_id: &str, table: &str) -> Option<i64> {
-        let shard_max_ids = self.shard_max_ids.lock().unwrap();
+        let shard_max_ids = match self.shard_max_ids.lock() {
+            Ok(shard_max_ids) => shard_max_ids,
+            Err(_) => {
+                println!("{color_bright_red}Failed to lock shard_max_ids{style_reset}");
+                return None;
+            }
+        };
+
         match shard_max_ids.get(shard_id) {
             Some(tables_id_info) => match tables_id_info.get(table) {
                 Some(max_id) => Some(*max_id),
@@ -98,7 +182,10 @@ struct ShardManagerObject {
 
 impl Ord for ShardManagerObject {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        match self.partial_cmp(other) {
+            Some(ordering) => ordering,
+            None => Ordering::Equal,
+        }
     }
 }
 

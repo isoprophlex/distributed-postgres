@@ -18,13 +18,20 @@ use tokio::task::LocalSet;
 
 pub trait NodeRole {
     fn backend(&self) -> Arc<Mutex<postgres::Client>>;
+
     /// Sends a query to the shard group
     fn send_query(&mut self, query: &str) -> Option<String>;
+
     fn stop(&mut self);
 
-    fn get_all_tables(&mut self) -> Vec<String> {
-        let query =
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
+    fn get_all_tables_from_self(&mut self, check_if_empty: bool) -> Vec<String> {
+        // Select all tables that have data in them
+        let query = if check_if_empty {
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND EXISTS ( SELECT 1 FROM table_name LIMIT 1 )"
+        } else {
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+        };
+
         let Some(rows) = self.get_rows_for_query(query) else {
             return Vec::new();
         };
@@ -37,16 +44,19 @@ pub trait NodeRole {
     }
 
     fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
-        // Código de error de SQLSTATE para "relation does not exist"
+        // SQLSTATE Code Error for "relation does not exist"
         const UNDEFINED_TABLE_CODE: &str = "42P01";
 
-        match self
-            .backend()
-            .as_ref()
-            .try_lock()
-            .unwrap()
-            .query(query, &[])
-        {
+        let backend = self.backend();
+        let mut backend_lock = match backend.as_ref().try_lock() {
+            Ok(lock) => lock,
+            Err(_) => {
+                eprintln!("Failed to acquire lock on backend");
+                return None;
+            }
+        };
+
+        match backend_lock.query(query, &[]) {
             Ok(rows) => {
                 print_rows(rows.clone());
                 Some(rows)
@@ -54,7 +64,9 @@ pub trait NodeRole {
             Err(e) => {
                 if let Some(db_error) = e.as_db_error() {
                     if db_error.code().code() == UNDEFINED_TABLE_CODE {
-                        eprintln!("Failed to execute query: Relation (table) does not exist");
+                        eprintln!(
+                            "Failed to execute query '{query}': Relation (table) does not exist"
+                        );
                     } else {
                         eprintln!("Failed to execute query: {e:?}");
                     }
@@ -109,13 +121,17 @@ pub fn get_node_instance() -> &'static mut NodeInstance {
 
 pub fn get_node_role() -> &'static mut dyn NodeRole {
     unsafe {
-        NODE_INSTANCE
-            .as_mut()
-            .unwrap()
-            .instance
-            .as_mut()
-            .unwrap()
-            .as_mut()
+        match NODE_INSTANCE.as_mut() {
+            Some(node_instance) => match node_instance.instance.as_mut() {
+                Some(instance) => instance.as_mut(),
+                None => {
+                    panic!("Node instance not initialized");
+                }
+            },
+            None => {
+                panic!("Node instance not initialized");
+            }
+        }
     }
 }
 
@@ -157,7 +173,12 @@ pub extern "C" fn InitNodeInstance(node_type: NodeType, port: *const i8) {
 
 fn run_raft(ip: String, port: String, transmitter: Sender<bool>, receiver: Receiver<bool>) {
     thread::spawn(move || {
-        let rt = Runtime::new().unwrap();
+        let rt = match Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => {
+                panic!("Error creating runtime: {:?}", e);
+            }
+        };
         rt.block_on(async {
             task::block_in_place(|| {
                 let local = LocalSet::new();
@@ -185,11 +206,15 @@ async fn new_raft_instance(
         .name
         .clone();
 
-    let mut raft_module = raft::raft_module::RaftModule::new(
-        node_id.clone(),
-        ip.to_string(),
-        port.parse::<usize>().unwrap(),
-    );
+    let port_number = match port.parse::<usize>() {
+        Ok(port) => port,
+        Err(_) => {
+            panic!("Error parsing port");
+        }
+    };
+
+    let mut raft_module =
+        raft::raft_module::RaftModule::new(node_id.clone(), ip.to_string(), port_number);
 
     // This nevers comes back, unless the node is the last one in the config file
     raft_module
@@ -216,9 +241,7 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                 };
                 match change_role(role.to_owned(), transmitter.clone()) {
                     Ok(_) => {
-                        println!(
-                            "{color_bright_green}Role changing finished succesfully{color_reset}"
-                        );
+                        println!("Role changing finished successfully");
                     }
                     Err(_) => {
                         println!("Error could not change role to {:?}", role);
@@ -293,7 +316,15 @@ fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
 }
 
 fn init_router(ip: &str, port: &str) {
-    let router = Router::new(ip, port);
+    // sleep for 5 seconds to allow the stream to be ready to read
+    //thread::sleep(std::time::Duration::from_secs(5));
+
+    let router = match Router::new(ip, port) {
+        Some(router) => router,
+        None => {
+            panic!("Error initializing router");
+        }
+    };
 
     unsafe {
         NODE_INSTANCE = Some(NodeInstance::new(
@@ -308,7 +339,8 @@ fn init_router(ip: &str, port: &str) {
     let ip_clone = ip.to_string();
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
-        Router::wait_for_incomming_connections(&shared_router, ip_clone, port_clone);
+        Router::wait_for_incoming_connections(&shared_router, ip_clone, port_clone);
+        println!("Router comes back from wait_for_incoming_connections");
     });
 }
 

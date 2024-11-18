@@ -8,7 +8,7 @@ use std::{
 
 use super::super::utils::node_config::*;
 use super::node::*;
-use crate::utils::common::Channel;
+use crate::utils::{common::Channel, queries::MAX_PAGE_SIZE};
 use crate::{
     node::messages::{message, node_info::NodeInfo},
     utils::queries::print_query_response,
@@ -50,6 +50,7 @@ impl Client {
             }
         }
     }
+
     pub fn get_router_info(config: NodesConfig) -> Option<TcpStream> {
         let mut candidate_ip;
         let mut candidate_port;
@@ -57,8 +58,22 @@ impl Client {
 
         loop {
             for node in &config.nodes {
+                if !ran_more_than_once {
+                    println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
+                    ran_more_than_once = true;
+                }
+
                 candidate_ip = node.ip.clone();
-                candidate_port = node.port.clone().parse::<u64>().unwrap() + 1000;
+
+                let node_port = match node.port.parse::<u64>() {
+                    Ok(port) => port,
+                    Err(_) => {
+                        eprintln!("Invalid port number in the config for {}", node.name);
+                        continue;
+                    }
+                };
+
+                candidate_port = node_port + 1000;
 
                 let mut candidate_stream =
                     match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
@@ -78,58 +93,77 @@ impl Client {
                     continue;
                 }
 
-                let response: &mut [u8] = &mut [0; 1024];
-                candidate_stream
-                    .set_read_timeout(Some(std::time::Duration::from_secs(3)))
-                    .unwrap();
+                match candidate_stream.set_read_timeout(Some(std::time::Duration::from_secs(3))) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("Failed to set read timeout: {:?}", e);
+                        continue;
+                    }
+                };
 
-                match candidate_stream.read(response) {
-                    Ok(_) => {
-                        let response_str = String::from_utf8_lossy(response);
-                        if let Ok(response_message) = message::Message::from_string(&response_str) {
-                            match response_message.get_message_type() {
-                                message::MessageType::RouterId => {
-                                    match Client::handle_router_id_message(response_message) {
-                                        Some(router_stream) => {
-                                            return Some(router_stream);
-                                        }
-                                        None => {
-                                            continue;
-                                        }
-                                    }
+                loop {
+                    if !ran_more_than_once {
+                        println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
+                        ran_more_than_once = true;
+                    }
+
+                    let response: &mut [u8] = &mut [0; 1024];
+                    match candidate_stream.read(response) {
+                        Ok(_) => {}
+                        Err(_) => {
+                            break;
+                        }
+                    };
+
+                    let response_str = String::from_utf8_lossy(response);
+                    let response_message = match message::Message::from_string(&response_str) {
+                        Ok(message) => message,
+                        Err(_) => {
+                            eprintln!("Invalid response from node.");
+                            break;
+                        }
+                    };
+
+                    match response_message.get_message_type() {
+                        message::MessageType::RouterId => {
+                            match Client::handle_router_id_message(response_message) {
+                                Some(router_stream) => {
+                                    return Some(router_stream);
                                 }
-                                message::MessageType::NoRouterData => {
-                                    // if no router data is found, the network might be in the process of going live.
-                                    // wait for a while to allow to elect a leader and try again.
-                                    std::thread::sleep(std::time::Duration::from_secs(3));
-                                    continue;
-                                }
-                                _ => {
-                                    eprintln!("Invalid response from node.");
+                                None => {
                                     continue;
                                 }
                             }
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to read response from node: {:?}", e);
+                        message::MessageType::NoRouterData => {
+                            // if no router data is found, the network might be in the process of going live.
+                            // wait for a while to allow to elect a leader and try again.
+                            std::thread::sleep(std::time::Duration::from_secs(3));
+                            continue;
+                        }
+                        _ => {
+                            eprintln!("Invalid response from node.");
+                            continue;
+                        }
                     }
                 }
-            }
-            if !ran_more_than_once {
-                println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
-                ran_more_than_once = true;
             }
         }
     }
 
-    fn handle_router_id_message(response_message: message::Message) -> Option<std::net::TcpStream> {
+    fn handle_router_id_message(response_message: message::Message) -> Option<TcpStream> {
         if let Some(node_info) = response_message.get_data().node_info {
             let node_ip = node_info.ip.clone();
-            let node_port = node_info.port.clone();
-            let connections_port = node_port.parse::<u64>().unwrap() + 1000;
+            let node_port = match node_info.port.clone().parse::<u64>() {
+                Ok(port) => port,
+                Err(_) => {
+                    eprintln!("Invalid port number in the config for the router");
+                    return None;
+                }
+            };
+            let connections_port = node_port + 1000;
 
-            match TcpStream::connect(format!("{}:{}", node_ip, connections_port)) {
+            return match TcpStream::connect(format!("{}:{}", node_ip, connections_port)) {
                 Ok(router_stream) => {
                     println!(
                         "{color_bright_green}Connected to router stream {}:{}{style_reset}",
@@ -138,13 +172,10 @@ impl Client {
                     );
                     return Some(router_stream);
                 }
-                Err(e) => {
-                    eprintln!("Failed to connect to the router stream: {:?}", e);
-                    return None;
-                }
-            }
+                Err(_) => None,
+            };
         }
-        return None;
+        None
     }
 
     fn handle_received_message(buffer: &mut [u8]) {
@@ -157,7 +188,12 @@ impl Client {
         };
 
         if response_message.get_message_type() == message::MessageType::QueryResponse {
-            let rows = response_message.get_data().query.unwrap();
+            let rows = match response_message.get_data().query {
+                Some(query) => query,
+                None => {
+                    return;
+                }
+            };
             print_query_response(rows);
         }
     }
@@ -200,30 +236,24 @@ impl NodeRole for Client {
             eprintln!("Reconnecting to new router...");
             drop(stream);
             // Obtener un nuevo router y actualizar el canal
-            if let Some(new_stream) = Self::get_router_info(get_nodes_config()) {
-                self.router_postgres_client = Channel {
-                    stream: Arc::new(Mutex::new(new_stream)),
-                };
-                stream = match self.router_postgres_client.stream.lock() {
-                    Ok(stream) => stream,
-                    Err(e) => {
-                        eprintln!("Failed to lock the new stream: {:?}", e);
-                        return None;
-                    }
-                };
-                // Reintentar el envío con el nuevo router
-                if let Err(e) = stream.write_all(message.to_string().as_bytes()) {
-                    eprintln!("Failed to send query after reconnecting: {:?}", e);
+            let new_stream = match Self::get_router_info(get_nodes_config()) {
+                Some(new_stream) => new_stream,
+                None => {
+                    eprintln!("No valid router found during reconnection.");
                     return None;
                 }
-            } else {
-                eprintln!("No valid router found during reconnection.");
-                return None;
-            }
+            };
+
+            self.router_postgres_client = Channel {
+                stream: Arc::new(Mutex::new(new_stream)),
+            };
+            return self.send_query(query);
         }
 
+        println!("{color_bright_blue}Query sent to router{style_reset}");
+
         // Preparar el buffer de respuesta
-        let mut buffer: [u8; 1024] = [0; 1024];
+        let mut buffer: [u8; MAX_PAGE_SIZE] = [0; MAX_PAGE_SIZE];
 
         // Intentar leer la respuesta y reconectar si falla
         match stream.read(&mut buffer) {
@@ -235,23 +265,18 @@ impl NodeRole for Client {
                 eprintln!("{color_bright_red}Failed to read response or empty response received.{style_reset}");
                 eprintln!("Reconnecting to new router...");
                 drop(stream);
+
                 // Obtener un nuevo router y actualizar el canal
                 if let Some(new_stream) = Self::get_router_info(get_nodes_config()) {
                     self.router_postgres_client = Channel {
                         stream: Arc::new(Mutex::new(new_stream)),
                     };
                     println!("{color_bright_green}Reconnected to new router{style_reset}");
-                    stream = match self.router_postgres_client.stream.lock() {
-                        Ok(stream) => stream,
-                        Err(e) => {
-                            eprintln!("Failed to lock the new stream: {:?}", e);
-                            return None;
-                        }
-                    };
-                    _ = stream.write_all(message.to_string().as_bytes());
-                } else {
-                    eprintln!("No valid router found during reconnection.");
+                    let new_response = self.send_query(query);
+                    return new_response;
                 }
+
+                eprintln!("No valid router found during reconnection.");
                 None
             }
         }

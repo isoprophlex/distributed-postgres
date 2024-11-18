@@ -1,7 +1,12 @@
+use std::usize;
+
 use postgres::{Column, Row};
 use rust_decimal::Decimal;
 
 use super::common::ConvertToString;
+
+/// Default page size of PostgreSQL
+pub const MAX_PAGE_SIZE: usize = 8192;
 
 struct QueryTypes;
 
@@ -22,6 +27,10 @@ pub fn query_is_select(query: &str) -> bool {
     query_is(query, QueryTypes::SELECT)
 }
 
+pub fn query_is_create_or_drop(query: &str) -> bool {
+    query_is(query, QueryTypes::CREATE) || query_is(query, QueryTypes::DROP)
+}
+
 fn query_is(query: &str, query_type: &str) -> bool {
     query.to_uppercase().starts_with(query_type)
 }
@@ -34,7 +43,7 @@ pub fn query_affects_memory_state(query: &str) -> bool {
         || query_is(query, QueryTypes::CREATE)
 }
 
-/// Gets the name of the table from a query, whenever the query has a "FROM <tablename>" clause.
+/// Gets the name of the table from a query, whenever the query has a "FROM <table_name>" clause.
 pub fn get_table_name_from_query(query: &str) -> Option<String> {
     // Call get_table_name_behind_keyword with the keywords "FROM", "UPDATE", INTO and TABLE
     let table_name = match get_table_name_behind_keyword(query, "FROM".to_string())
@@ -79,17 +88,17 @@ fn get_id_index(query: &str) -> Option<usize> {
     let index3 = query_aux.find(query_substring3);
     let index4 = query_aux.find(query_substring4);
 
-    if index1.is_some() {
-        return Some(index1.unwrap() + offset1);
-    } else if index2.is_some() {
-        return Some(index2.unwrap() + offset2);
-    } else if index3.is_some() {
-        return Some(index3.unwrap() + offset3);
-    } else if index4.is_some() {
-        return Some(index4.unwrap() + offset4);
+    return if let Some(index1) = index1 {
+        Some(index1 + offset1)
+    } else if let Some(index2) = index2 {
+        Some(index2 + offset2)
+    } else if let Some(index3) = index3 {
+        Some(index3 + offset3)
+    } else if let Some(index4) = index4 {
+        Some(index4 + offset4)
     } else {
-        return None;
-    }
+        None
+    };
 }
 
 fn get_trimmed_id(query: &str, from: usize) -> String {
@@ -97,18 +106,24 @@ fn get_trimmed_id(query: &str, from: usize) -> String {
     if id.ends_with(';') {
         id = &id[..id.len() - 1];
     }
-    return id.to_string();
+    id.to_string()
 }
 
 pub fn get_id_if_exists(query: &str) -> Option<i64> {
     let id_index = get_id_index(query)?;
     let id = get_trimmed_id(query, id_index);
-    Some(id.parse::<i64>().unwrap())
+    match id.parse::<i64>() {
+        Ok(id) => Some(id),
+        Err(_) => None,
+    }
 }
 
 /// Finds the 'WHERE ID=' clause, and changes the value of the id to the new_id
 pub fn format_query_with_new_id(query: &str, new_id: i64) -> String {
-    let id_index = get_id_index(query).unwrap();
+    let id_index = match get_id_index(query) {
+        Some(index) => index,
+        None => return query.to_string(),
+    };
     let id = get_trimmed_id(query, id_index);
     let id_len = id.len();
 
@@ -121,7 +136,7 @@ pub fn format_query_with_new_id(query: &str, new_id: i64) -> String {
 // ************** ToString TRAIT **************
 
 trait ConvertToStringOffset {
-    fn convert_to_string_with_offset(&self, offset: i64) -> String;
+    fn convert_to_string_with_offset(&self, offset: i64) -> Option<String>;
 }
 
 pub trait ConvertRowToString {
@@ -159,11 +174,11 @@ impl ConvertRowToString for Row {
 }
 
 impl ConvertToStringOffset for Row {
-    fn convert_to_string_with_offset(&self, offset: i64) -> String {
+    fn convert_to_string_with_offset(&self, offset: i64) -> Option<String> {
         let mut result = String::new();
         // If is empty, return empty string
         if self.is_empty() {
-            return result;
+            return Some(result);
         }
 
         for (i, _) in self.columns().iter().enumerate() {
@@ -178,7 +193,7 @@ impl ConvertToStringOffset for Row {
                         Ok(v) => format!("{}", v),
                         Err(_) => match self.try_get::<usize, Decimal>(i) {
                             Ok(v) => format!("{}", v),
-                            Err(_) => String::new(),
+                            Err(_) => return None,
                         },
                     },
                 },
@@ -188,7 +203,12 @@ impl ConvertToStringOffset for Row {
                 // If the column name is 'id', sum the offset to the value
                 result.push_str(&format!(
                     "{}",
-                    formatted_value.parse::<i64>().unwrap() + offset
+                    match formatted_value.parse::<i64>() {
+                        Ok(v) => v + offset,
+                        Err(_) => {
+                            return None;
+                        }
+                    }
                 ));
             } else {
                 result.push_str(&formatted_value);
@@ -196,7 +216,7 @@ impl ConvertToStringOffset for Row {
             result.push_str(" | ");
         }
 
-        result
+        Some(result)
     }
 }
 
@@ -269,7 +289,7 @@ pub fn format_rows_without_offset(rows: Vec<Row>) -> String {
     result
 }
 
-pub fn format_rows_with_offset(rows_offset: Vec<(Vec<Row>, i64)>) -> String {
+pub fn format_rows_with_offset(rows_offset: Vec<(Vec<Row>, i64)>) -> Option<String> {
     let mut result = String::new();
 
     // Get column names and add them to the result, separated by a pipe
@@ -281,12 +301,16 @@ pub fn format_rows_with_offset(rows_offset: Vec<(Vec<Row>, i64)>) -> String {
     // For each Row, convert it to string. Get the id value and add the offset to it
     for (rows, offset) in rows_offset {
         for row in rows {
-            result.push_str(&row.convert_to_string_with_offset(offset));
+            let row_result = match row.convert_to_string_with_offset(offset) {
+                Some(row_result) => row_result,
+                None => return None,
+            };
+            result.push_str(&row_result);
             result.push('\0');
         }
     }
 
-    result
+    Some(result)
 }
 
 #[cfg(test)]

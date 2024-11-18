@@ -186,13 +186,13 @@ impl Message {
                         return MessageData::new_query(query.clone(), Some(node_info.clone()));
                     }
                 }
-                return MessageData::new_none();
+                MessageData::new_none()
             }
             MessageType::QueryResponse => {
                 if let Some(ref query_response) = self.query_data {
                     return MessageData::new_query_response(query_response.clone());
                 }
-                return MessageData::new_none();
+                MessageData::new_none()
             }
             _ => MessageData::new_none(),
         }
@@ -288,7 +288,10 @@ impl Message {
         // Payload
         let payload = match parts.next() {
             Some("None") => None,
-            Some(payload) => Some(payload.parse().unwrap()),
+            Some(payload) => match payload.parse() {
+                Ok(payload) => Some(payload),
+                Err(_) => return Err("Invalid payload"),
+            },
             None => None,
         };
 
@@ -302,7 +305,7 @@ impl Message {
         // Node Info
         let node_info = match parts.next() {
             Some("None") => None,
-            Some(node_info) => Some(node_info.parse().unwrap()),
+            Some(node_info) => Some(node_info.parse()?),
             None => None,
         };
 
@@ -316,7 +319,10 @@ impl Message {
                     query.push_str(part);
                     query.push(' ');
                 }
-                Some(query.split(';').next().unwrap().to_string())
+                match query.split(';').next() {
+                    Some(query) => Some(query.to_string()),
+                    None => None,
+                }
             }
             None => None,
         };
