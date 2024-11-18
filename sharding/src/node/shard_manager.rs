@@ -54,6 +54,18 @@ impl ShardManager {
         }
     }
 
+    pub fn count(&self) -> usize {
+        let shards = match self.shards.lock() {
+            Ok(shards) => shards,
+            Err(_) => {
+                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                return 0;
+            }
+        };
+
+        shards.len()
+    }
+
     /// Updates the memory of a shard and reorders the shards based on the new memory.
     /// If the memory is higher than the current top shard, it will become the new top shard.
     /// If the memory is lower than the current top shard, it will be placed in the correct position in the heap.
@@ -91,7 +103,7 @@ impl ShardManager {
     // This is not the most efficient way. If you'd like to improve it, we have thought about options: using a different data structure, or if the query affects all shards, clear the heap and add them from scratch. This needs to be thinked through, because the router handles each of the shards separately.
     // Anyway, we are out of time, so this is the best we can do for now.
     /// Deletes a shard from the heap.
-    fn delete(&mut self, shard_id: String) {
+    pub fn delete(&mut self, shard_id: String) {
         let peeked_shard_id = match self.peek() {
             Some(shard_id) => shard_id,
             None => {
