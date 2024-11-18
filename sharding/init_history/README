@@ -6,5 +6,5 @@ This allows us to understand the current behavior of the node:
 - If it's the first time running, the node will only connect to the previous nodes of the config file (nodes_config.yaml).
 - If it's not the first time running, the node will connect to all the nodes of the config file, except itself.
 
-This folder can be cleared if you want to reset the networks's behavior.
+This folder can be cleared if you want to reset the network's behavior.
 This is achieved by calling the "clean-init-history.sh": `./clean-init-history.sh`

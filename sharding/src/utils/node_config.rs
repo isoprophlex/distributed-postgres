@@ -5,12 +5,12 @@ const CONFIG_FILE_PATH: &str = "../../../sharding/src/node/config/nodes_config.y
 const MEMORY_CONFIG_FILE_PATH: &str = "../../../sharding/src/node/config/memory_config.yaml";
 pub const INIT_HISTORY_FILE_PATH: &str = "../../../sharding/init_history/init_";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct NodesConfig {
     pub nodes: Vec<Node>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Node {
     pub ip: String,
     pub port: String,
