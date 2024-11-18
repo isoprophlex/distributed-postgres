@@ -25,8 +25,12 @@ pub trait NodeRole {
 
     fn get_all_tables_from_self(&mut self, check_if_empty: bool) -> Vec<String> {
         // Select all tables that have data in them
-        let query = if check_if_empty {"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND EXISTS ( SELECT 1 FROM table_name LIMIT 1 )"} else {"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"};
-            
+        let query = if check_if_empty {
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND EXISTS ( SELECT 1 FROM table_name LIMIT 1 )"
+        } else {
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+        };
+
         let Some(rows) = self.get_rows_for_query(query) else {
             return Vec::new();
         };
@@ -59,7 +63,9 @@ pub trait NodeRole {
             Err(e) => {
                 if let Some(db_error) = e.as_db_error() {
                     if db_error.code().code() == UNDEFINED_TABLE_CODE {
-                        eprintln!("Failed to execute query '{query}': Relation (table) does not exist");
+                        eprintln!(
+                            "Failed to execute query '{query}': Relation (table) does not exist"
+                        );
                     } else {
                         eprintln!("Failed to execute query: {e:?}");
                     }

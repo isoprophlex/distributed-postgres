@@ -856,25 +856,25 @@ impl NodeRole for Router {
         };
 
         let response = if query_is_select(&query) && !responses.is_empty() {
-                match self.format_response(responses, &query) {
-                    Some(response) => response,
-                    None => {
-                        eprintln!("Failed to format response");
-                        return None;
-                    }
+            match self.format_response(responses, &query) {
+                Some(response) => response,
+                None => {
+                    eprintln!("Failed to format response");
+                    return None;
                 }
-            } else {
-                let rows_lock = match rows.lock() {
-                    Ok(rows) => rows,
-                    Err(_) => {
-                        eprintln!("Failed to get rows lock");
-                        return None;
-                    }
-                };
-                // Query is not select or shard response is empty.
-                // Therefore, there's no need to format the response to abstract the offset
-                rows_lock.convert_to_string()
+            }
+        } else {
+            let rows_lock = match rows.lock() {
+                Ok(rows) => rows,
+                Err(_) => {
+                    eprintln!("Failed to get rows lock");
+                    return None;
+                }
             };
+            // Query is not select or shard response is empty.
+            // Therefore, there's no need to format the response to abstract the offset
+            rows_lock.convert_to_string()
+        };
 
         print_query_response(response.clone());
         Some(response)

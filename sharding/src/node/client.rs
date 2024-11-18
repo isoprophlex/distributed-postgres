@@ -58,7 +58,6 @@ impl Client {
 
         loop {
             for node in &config.nodes {
-
                 if !ran_more_than_once {
                     println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
                     ran_more_than_once = true;
@@ -101,16 +100,16 @@ impl Client {
                         continue;
                     }
                 };
-                
+
                 loop {
                     if !ran_more_than_once {
                         println!("\n[⚠️] Failed to connect to the database. This will be retried for as long as the program is running.\nYou can stop this program by pressing Ctrl+C.\n");
                         ran_more_than_once = true;
                     }
-                    
+
                     let response: &mut [u8] = &mut [0; 1024];
                     match candidate_stream.read(response) {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(_) => {
                             break;
                         }
@@ -124,7 +123,7 @@ impl Client {
                             break;
                         }
                     };
-                    
+
                     match response_message.get_message_type() {
                         message::MessageType::RouterId => {
                             match Client::handle_router_id_message(response_message) {
@@ -173,9 +172,7 @@ impl Client {
                     );
                     return Some(router_stream);
                 }
-                Err(_) => {
-                    None
-                }
+                Err(_) => None,
             };
         }
         None
