@@ -42,7 +42,6 @@ pub struct Router {
 impl Router {
     /// Creates a new Router node with the given port and ip, connecting it to the shards specified in the configuration file.
     pub fn new(ip: &str, port: &str) -> Self {
-        println!("Inside new::Router");
         Router::initialize_router_with_connections(ip, port)
     }
 
@@ -53,11 +52,7 @@ impl Router {
         waiting_port: String,
     ) {
         let port = waiting_port.parse::<u64>().unwrap() + 1000;
-        println!("Attempting to bind listener to port: {}", port);
-
         let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
-
-        println!("wait_for_incomming_connections");
 
         loop {
             let stopped = {
@@ -80,7 +75,6 @@ impl Router {
             };
 
             if stopped {
-                println!("Stopped is true");
                 drop(listener);
                 return;
             }
@@ -101,7 +95,6 @@ impl Router {
                     let stream_clone = Arc::clone(&shareable_stream);
 
                     thread::spawn(move || {
-                        println!("Inside thread in wait_for_client");
                         Router::listen(&router_clone, &stream_clone);
                     });
                 }
@@ -133,7 +126,6 @@ impl Router {
             };
 
             if stopped {
-                println!("Stopped is true");
                 return;
             }
 
@@ -235,7 +227,6 @@ impl Router {
     }
 
     fn handle_hello_from_node_message(&mut self, message: &Message) -> Option<String> {
-        println!("Received HelloFromNode message");
         let node_info = match message.get_data().node_info {
             Some(node_info) => node_info,
             None => {
@@ -286,7 +277,6 @@ impl Router {
     fn configure_connections(&mut self) {
         let config = get_nodes_config();
         for shard in config.nodes {
-            println!("Configuring connection to shard: {:?}", shard);
             if (shard.ip == self.ip.as_ref()) && (shard.port == self.port.as_ref()) {
                 self.name = shard.name.clone();
                 continue;
@@ -304,18 +294,14 @@ impl Router {
             .set_health_connection(node_ip.as_str(), node_port.as_str())
             .is_err()
         {
-            println!("Failed to connect to node: {}", node.name);
+            eprintln!("Failed to connect to node: {}", node.name);
             return;
         }
 
-        println!("Connecting to ip {} and port: {}", node_ip, node_port);
-
         let Ok(shard_client) = connect_to_node(&node_ip, &node_port) else {
-            println!("Failed to connect to port: {node_port}");
+            eprintln!("Failed to connect to port: {node_port}");
             return;
         };
-
-        println!("CONNECTED to ip {} and port: {}", node_ip, node_port);
 
         self.save_shard_client(node_port.to_string(), shard_client);
     }
@@ -329,7 +315,6 @@ impl Router {
     /// Sets the health_connection to the shard with the given ip and port, initializing the communication with a handshake between the router and the shard.
     fn set_health_connection(&mut self, node_ip: &str, node_port: &str) -> Result<(), Error> {
         let Ok(health_connection) = Router::get_shard_channel(node_ip, node_port) else {
-            println!("Failed to create health-connection to port: {node_port}");
             return Err(Error);
         };
 
@@ -361,12 +346,9 @@ impl Router {
             name: self.name.clone(),
         };
         let update_message = Message::new_init_connection(node_info);
-        println!("Sending message to shard: {update_message:?}");
 
         let message_string = update_message.to_string();
         stream.write_all(message_string.as_bytes()).unwrap();
-
-        println!("Waiting for response from shard");
 
         let response: &mut [u8] = &mut [0; 1024];
 
@@ -396,18 +378,15 @@ impl Router {
                 self.handle_memory_update_message(&response_message.clone(), node_port)
             }
             _ => {
-                println!("{color_red}Shard {node_port} denied the connection{style_reset}");
+                eprintln!("{color_red}Shard {node_port} denied the connection{style_reset}");
                 false
             }
         }
     }
 
     fn handle_agreed_message(&mut self, message: &Message, node_port: &str) -> bool {
-        println!("{color_bright_green}Shard {node_port} accepted the connection{style_reset}");
         let memory_size = message.get_data().payload.unwrap();
         let max_ids_info = message.get_data().max_ids.unwrap();
-        println!("{color_bright_green}Memory size: {memory_size}{style_reset}");
-        println!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
         self.save_shard_in_manager(memory_size, node_port, max_ids_info);
         true
     }
@@ -415,10 +394,6 @@ impl Router {
     fn handle_memory_update_message(&mut self, message: &Message, node_port: &str) -> bool {
         let memory_size = message.get_data().payload.unwrap();
         let max_ids_info = message.get_data().max_ids.unwrap();
-        println!(
-            "{color_bright_green}Shard {node_port} updated its memory size to {memory_size}{style_reset}"
-        );
-        println!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
         self.update_shard_in_manager(memory_size, node_port, max_ids_info);
         true
     }
@@ -428,8 +403,6 @@ impl Router {
         let mut shard_manager = self.shard_manager.as_ref().clone();
         shard_manager.add_shard(memory_size, shard_id.to_string());
         shard_manager.save_max_ids_for_shard(shard_id.to_string(), max_ids);
-        println!("{color_bright_green}Shard {shard_id} added to ShardManager{style_reset}");
-        println!("Shard Manager: {shard_manager:?}");
     }
 
     /// Updates the shard in the `ShardManager` with the given memory size and shard id.
@@ -437,14 +410,11 @@ impl Router {
         let mut shard_manager = self.shard_manager.as_ref().clone();
         shard_manager.update_shard_memory(memory_size, shard_id.to_string());
         shard_manager.save_max_ids_for_shard(shard_id.to_string(), max_ids);
-        println!("{color_bright_green}Shard {shard_id} updated in ShardManager{style_reset}");
-        println!("Shard Manager: {shard_manager:?}");
     }
 
     /// Establishes a health connection with the node with the given ip and port, returning a Channel.
     fn get_shard_channel(node_ip: &str, node_port: &str) -> Result<Channel, io::Error> {
         let port = node_port.parse::<u64>().unwrap() + 1000;
-        println!("Attempting to connect to port: {}", port);
         match TcpStream::connect(format!("{node_ip}:{port}")) {
             Ok(stream) => {
                 println!(
@@ -454,12 +424,7 @@ impl Router {
                     stream: Arc::new(Mutex::new(stream)),
                 })
             }
-            Err(e) => {
-                println!(
-                    "{color_red}Error establishing health connection with {node_ip}:{port}. Error: {e:?}{style_reset}"
-                );
-                Err(e)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -470,13 +435,10 @@ impl Router {
     /// Returns the query formatted if needed (if there's a 'WHERE ID=' clause, offset might need to be removed)
     fn get_data_needed_from(&mut self, query: &str) -> (Vec<String>, bool, String) {
         if let Some(id) = get_id_if_exists(query) {
-            println!("ID found in query: {id}");
             return self.get_specific_shard_with(id, query);
         }
 
-        println!("ID NOT FOUND in query.");
         if query_is_insert(query) {
-            println!("Query is INSERT");
             let shard = match self.shard_manager.peek() {
                 Some(shard) => shard,
                 None => {
@@ -503,8 +465,6 @@ impl Router {
             );
         };
 
-        println!("Table name: {table_name}");
-
         for shard_id in self.shards.lock().unwrap().keys() {
             let Some(max_id) = self
                 .shard_manager
@@ -525,7 +485,6 @@ impl Router {
             }
         }
 
-        println!("ID not found in any shard");
         return (
             self.shards.lock().unwrap().keys().cloned().collect(),
             query_affects_memory_state(query),
@@ -569,11 +528,7 @@ impl NodeRole for Router {
             return None;
         }
 
-        println!("Router send_query called with query: {received_query:?}");
-
         let (shards, is_insert, query) = self.get_data_needed_from(received_query);
-
-        println!("Shards: {shards:?}, is_insert: {is_insert}, query: {query}");
 
         // If there are no shards available, the router uses its own backend to execute the query
         if shards.is_empty() {
@@ -639,7 +594,6 @@ impl NodeRole for Router {
         };
 
         let response = if query_is_select(&query) && !responses.is_empty() {
-            println!("Query is SELECT and shards_responses is not empty");
             self.format_response(responses, &query)
         } else {
             let rows_lock = match rows.lock() {
@@ -761,9 +715,6 @@ impl Router {
     }
 
     fn send_query_to_backend(&mut self, query: &str) -> Option<String> {
-        println!(
-            "{color_bright_green}Sending query to the router database: ({query}){style_reset}"
-        );
         let rows = self.get_rows_for_query(query)?;
         let response = format_rows_without_offset(rows);
         Some(response)
@@ -780,7 +731,7 @@ impl Router {
 
     fn redistribute_data(&mut self) {
         if !self.backend_has_data() {
-            println!("No data found in backend. Skipping redistribution.");
+            eprintln!("No data found in backend. Skipping redistribution.");
             return;
         }
 
@@ -793,7 +744,7 @@ impl Router {
         };
 
         if shards.is_empty() {
-            println!("No shards found to redistribute data. Holding on to data until shards are available.");
+            eprintln!("No shards found to redistribute data. Holding on to data until shards are available.");
             return;
         }
 
@@ -920,7 +871,6 @@ impl Router {
         for table in tables {
             let drop_query = format!("DROP TABLE IF EXISTS {}", table);
             let _ = self.get_rows_for_query(&drop_query);
-            println!("Dropped table {}", table);
         }
     }
 }

@@ -4,6 +4,7 @@ use crate::node::client::Client;
 use crate::utils::node_config::get_nodes_config_raft;
 use crate::utils::node_config::INIT_HISTORY_FILE_PATH;
 use crate::utils::queries::print_rows;
+use inline_colorization::*;
 use postgres::Row;
 use std::ffi::CStr;
 use std::fmt::Error;
@@ -136,10 +137,8 @@ pub extern "C" fn InitNodeInstance(node_type: NodeType, port: *const i8) {
                 panic!("Received an invalid UTF-8 string");
             }
         };
-        println!("found_port: {}", found_port);
     }
     let ip = "127.0.0.1";
-    println!("before init_shard ip: {}, port: {}", ip, found_port);
     new_node_instance(node_type.clone(), ip, &found_port);
 
     // If the node is a client, it does not need to run raft. Thus, it can return after initializing
@@ -217,7 +216,9 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                 };
                 match change_role(role.to_owned(), transmitter.clone()) {
                     Ok(_) => {
-                        println!("Role changing finished succesfully");
+                        println!(
+                            "{color_bright_green}Role changing finished succesfully{color_reset}"
+                        );
                     }
                     Err(_) => {
                         println!("Error could not change role to {:?}", role);
@@ -225,53 +226,39 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                 }
             }
             Err(_) => {
-                // println!("Error receiving from raft transmitter: {:?}", e);
+                // Do nothing
             }
         }
     });
 }
 
 fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Error> {
-    println!("Changing role to {:?}", new_role);
-
     if new_role == NodeType::Client {
-        println!("NodeRole cannot be changed to Client, it is not a valid role");
+        eprintln!("NodeRole cannot be changed to Client, it is not a valid role");
         return Err(Error);
     };
 
-    println!("Trying to get node instance");
     let node_instance = get_node_instance();
-    println!("AFTER get node instance");
     let current_instance = &mut node_instance.instance;
 
-    println!("AFTER current instance");
-
     if node_instance.node_type == new_role {
-        println!("NodeRole is already {:?}", new_role);
         confirm_role_change(transmitter);
         return Ok(());
     }
 
-    println!("node type changes");
-
     let ip = node_instance.ip.clone();
     let port = node_instance.port.clone();
-
-    println!("ip: {}, port: {}", ip, port);
 
     // Stop current instance
     match current_instance.as_mut() {
         Some(instance) => {
-            println!("Stopping current instance");
             instance.stop();
         }
         None => {
-            println!("Node instance not initialized");
+            eprintln!("Node instance not initialized");
             return Err(Error);
         }
     }
-
-    println!("AFTER STOPPING current instance");
 
     match new_role {
         NodeType::Router => {
@@ -281,12 +268,11 @@ fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Erro
             init_shard(&ip, &port);
         }
         _ => {
-            println!("NodeRole can only be changed to Router or Shard");
+            eprintln!("NodeRole can only be changed to Router or Shard");
             return Err(Error);
         }
     }
 
-    println!("AFTER CHANGING current instance");
     confirm_role_change(transmitter);
     Ok(())
 }
@@ -307,9 +293,6 @@ fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
 }
 
 fn init_router(ip: &str, port: &str) {
-    // sleep for 5 seconds to allow the stream to be ready to read
-    //thread::sleep(std::time::Duration::from_secs(5));
-
     let router = Router::new(ip, port);
 
     unsafe {
@@ -326,14 +309,10 @@ fn init_router(ip: &str, port: &str) {
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
         Router::wait_for_incomming_connections(&shared_router, ip_clone, port_clone);
-        println!("Router comes back from wait_for_incomming_connections");
     });
-
-    println!("Router node initializes");
 }
 
 fn init_shard(ip: &str, port: &str) {
-    println!("Sharding node initializing");
     let shard = Shard::new(ip, port);
 
     unsafe {
@@ -350,14 +329,10 @@ fn init_shard(ip: &str, port: &str) {
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
         Shard::accept_connections(shared_shard, ip_clone, port_clone);
-        println!("Shard comes back from accept_connections");
     });
-
-    println!("Sharding node initializes");
 }
 
 fn init_client(ip: &str, port: &str) {
-    println!("Client node initializing");
     unsafe {
         NODE_INSTANCE = Some(NodeInstance::new(
             Box::new(Client::new(ip, port)),
@@ -366,5 +341,4 @@ fn init_client(ip: &str, port: &str) {
             NodeType::Client,
         ));
     }
-    println!("Client node initializes");
 }

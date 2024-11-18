@@ -174,7 +174,6 @@ impl NodeRole for Client {
             return None;
         }
 
-        println!("Sending query from client");
         let message =
             message::Message::new_query(Some(self.client_info.clone()), query.to_string());
 
@@ -191,8 +190,6 @@ impl NodeRole for Client {
                 return None;
             }
         };
-
-        println!("{color_bright_blue}Stream locked{style_reset}");
 
         // Intentar enviar el mensaje y reconectar si falla
         if let Err(e) = stream.write_all(message.to_string().as_bytes()) {
@@ -219,13 +216,10 @@ impl NodeRole for Client {
                     eprintln!("Failed to send query after reconnecting: {:?}", e);
                     return None;
                 }
-                println!("{color_bright_blue}Query sent to new router{style_reset}");
             } else {
                 eprintln!("No valid router found during reconnection.");
                 return None;
             }
-        } else {
-            println!("{color_bright_blue}Query sent to router{style_reset}");
         }
 
         // Preparar el buffer de respuesta

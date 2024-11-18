@@ -1,11 +1,9 @@
 use std::ffi::CStr;
 extern crate users;
 use super::super::node::node::*;
-use inline_colorization::*;
 
 #[no_mangle]
 pub extern "C" fn SendQueryToShard(query_data: *const i8) -> bool {
-    println!("{color_blue}{style_bold}SendQueryToShard called{style_reset}");
     unsafe {
         if query_data.is_null() {
             eprintln!("Received a null pointer");
@@ -21,7 +19,6 @@ pub extern "C" fn SendQueryToShard(query_data: *const i8) -> bool {
             }
         };
 
-        println!("Received Query: {:?}", query);
         handle_query(query.trim())
     }
 }

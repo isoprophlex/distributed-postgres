@@ -1,5 +1,4 @@
 use indexmap::IndexMap;
-use inline_colorization::*;
 use std::{
     cmp::Ordering,
     collections::BinaryHeap,
@@ -27,13 +26,11 @@ impl ShardManager {
             key: value,
             value: shard_id,
         };
-        println!("Adding shard: {:?}", object);
         let mut shards = self.shards.lock().unwrap();
         shards.push(object);
     }
 
     pub fn peek(&self) -> Option<String> {
-        println!("Peeking shards: {:?}", self.shards);
         match self.shards.lock().unwrap().peek() {
             Some(object) => Some(object.value.clone()),
             None => None,
@@ -45,18 +42,8 @@ impl ShardManager {
     /// If the memory is lower than the current top shard, it will be placed in the correct position in the heap.
     /// If the memoty is zero, the shard will be at the base of the heap until it is updated once again.
     pub fn update_shard_memory(&mut self, memory: f64, shard_id: String) {
-        println!(
-            "{color_bright_green}Updating shard memory: {} to {}{style_reset}",
-            shard_id, memory
-        );
-
         self.delete(shard_id.clone());
         self.add_shard(memory, shard_id);
-
-        println!(
-            "{color_bright_green}Shard memory updated: {:?}{style_reset}",
-            self.shards
-        );
     }
 
     fn pop(&mut self) -> Option<String> {
@@ -93,8 +80,6 @@ impl ShardManager {
 
     pub fn get_max_ids_for_shard_table(&self, shard_id: &str, table: &str) -> Option<i64> {
         let shard_max_ids = self.shard_max_ids.lock().unwrap();
-        println!("shard_max_ids: {:?}", shard_max_ids);
-        println!("shard_id: {:?}, table: {:?}", shard_id, table);
         match shard_max_ids.get(shard_id) {
             Some(tables_id_info) => match tables_id_info.get(table) {
                 Some(max_id) => Some(*max_id),

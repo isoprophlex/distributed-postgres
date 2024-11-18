@@ -49,17 +49,9 @@ impl Shard {
     /// Creates a new Shard node in the given port.
     #[must_use]
     pub fn new(ip: &str, port: &str) -> Self {
-        println!("Creating a new Shard node in port: {port}");
-        println!("Connecting to the database in port: {port}");
-
         let backend: PostgresClient = connect_to_node(ip, port).unwrap();
 
         let memory_manager = Self::initialize_memory_manager();
-
-        println!(
-            "{color_blue}[Shard] Available Memory: {:?} %{style_reset}",
-            memory_manager.available_memory_perc
-        );
 
         let name = match find_name_for_node(ip.to_string(), port.to_string()) {
             Some(name) => name,
@@ -94,8 +86,6 @@ impl Shard {
     }
 
     pub fn look_for_sharding_network(ip: &str, port: &str, name: &str) {
-        println!("Checking if there's a sharding network ...");
-
         let config = get_nodes_config();
         let mut candidate_ip;
         let mut candidate_port;
@@ -130,7 +120,6 @@ impl Shard {
                 port: port.to_string(),
                 name: name.to_string(),
             });
-            println!("{color_bright_green}Sending HelloFromNode message to {candidate_ip}:{candidate_port}{style_reset}");
 
             candidate_stream
                 .write_all(hello_message.to_string().as_bytes())
@@ -140,7 +129,6 @@ impl Shard {
 
     pub fn accept_connections(shared_shard: Arc<Mutex<Shard>>, ip: String, accepting_port: String) {
         let port = accepting_port.parse::<u64>().unwrap() + 1000;
-        println!("Attempting to bind listener to port: {}", port);
 
         let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
 
@@ -172,7 +160,6 @@ impl Shard {
             };
 
             if *must_stop {
-                println!("{color_red}STOPPED ACCEPT CONNECTIONS{style_reset}");
                 drop(listener);
                 handles
                     .into_iter()
@@ -200,9 +187,7 @@ impl Shard {
                     let stopped_clone = stopped.clone();
 
                     let _handle = thread::spawn(move || {
-                        println!("Inside thread spawn on accept_connections");
                         Shard::listen(&shard_clone, &stream_clone, stopped_clone);
-                        println!("Listening thread finished");
                     });
                     handles.push(_handle);
                 }
@@ -219,8 +204,6 @@ impl Shard {
         tcp_stream: &Arc<Mutex<TcpStream>>,
         stopped: Arc<Mutex<bool>>,
     ) {
-        println!("Listening for incoming messages");
-
         let mut stream = match tcp_stream.lock() {
             Ok(stream) => stream,
             Err(_) => {
@@ -238,7 +221,6 @@ impl Shard {
         }
 
         loop {
-            // println!("Inside listen loop");
             let must_stop = match stopped.lock() {
                 Ok(stopped) => stopped,
                 Err(_) => {
@@ -248,22 +230,15 @@ impl Shard {
             };
 
             if *must_stop {
-                println!("{color_red}STOPPED LISTENING{style_reset}");
                 drop(stream);
                 return;
             }
 
             std::mem::drop(must_stop);
 
-            // println!("LOOPING listen");
-
             // sleep for 1 millisecond to allow the stream to be ready to read
             thread::sleep(std::time::Duration::from_millis(1));
             let mut buffer = [0; 1024];
-
-            // println!("Before stream lock");
-
-            // println!("After stream lock");
 
             match stream.set_nonblocking(true) {
                 Ok(()) => {}
@@ -273,7 +248,6 @@ impl Shard {
                 }
             }
 
-            // println!("Before stream read");
             match stream.read(&mut buffer) {
                 Ok(chars) => {
                     if chars == 0 {
@@ -308,10 +282,6 @@ impl Shard {
                     }
 
                     if let Some(response) = shard.get_response_message(message) {
-                        println!(
-                            "{color_bright_green}Received message: {message_string}{style_reset}"
-                        );
-                        println!("{color_bright_green}Sending response: {response}{style_reset}");
                         stream.write_all(response.as_bytes()).unwrap();
                     }
                 }
@@ -347,13 +317,11 @@ impl Shard {
     fn handle_init_connection_message(&mut self, message: Message) -> Option<String> {
         let router_info = message.get_data().node_info.unwrap();
         self.router_info = Arc::new(Mutex::new(Some(router_info.clone())));
-        println!("{color_bright_green}Received an InitConnection message{style_reset}");
         let response_string = self.get_agreed_connection();
         Some(response_string)
     }
 
     fn handle_memory_update_message(&mut self) -> Option<String> {
-        println!("{color_bright_green}Received an AskMemoryUpdate message{style_reset}");
         let response_string = self.get_memory_update_message();
         Some(response_string)
     }
@@ -385,9 +353,7 @@ impl Shard {
 
     fn get_memory_update_message(&mut self) -> String {
         match self.update() {
-            Ok(()) => {
-                println!("Memory updated successfully");
-            }
+            Ok(()) => {}
             Err(e) => {
                 eprintln!("Failed to update memory: {e:?}");
             }
@@ -446,16 +412,13 @@ impl NodeRole for Shard {
     }
 
     fn stop(&mut self) {
-        println!("{color_red}Stopping shard{style_reset}");
         match self.stopped.lock() {
             Ok(mut stopped) => {
-                println!("{color_red}Setting stopped to true{style_reset}");
                 *stopped = true;
             }
             Err(_) => {
                 eprintln!("Failed to stop router");
             }
         }
-        println!("{color_red}Shard stopped{style_reset}");
     }
 }

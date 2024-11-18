@@ -175,11 +175,6 @@ impl Message {
                     None => TablesIdInfo::new(),
                 };
                 if let Some(payload) = self.payload {
-                    println!(
-                        "Payload: {}, Max Ids: {}",
-                        payload,
-                        max_ids.convert_to_string()
-                    );
                     MessageData::new_payload(payload, max_ids)
                 } else {
                     MessageData::new_none()

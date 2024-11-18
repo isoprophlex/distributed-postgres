@@ -1,4 +1,3 @@
-use inline_colorization::*;
 use libc::statvfs;
 use std::ffi::CString;
 use std::io;
@@ -19,10 +18,6 @@ impl MemoryManager {
                 Some(perc) => perc,
                 None => panic!("[MemoryManager] Failed to get available memory"),
             };
-        println!(
-            "{color_blue}[Memory Manager] Memory Threshold: {:?}%{style_reset}",
-            unavailable_memory_perc
-        );
         MemoryManager {
             unavailable_memory_perc,
             available_memory_perc,
@@ -68,9 +63,6 @@ impl MemoryManager {
             let threshold_size = total * (unavailable_memory_perc / 100.0);
 
             if threshold_size > available_space as f64 {
-                println!(
-                    "{color_red}[Memory Manager] Memory Threshold Exceeded Available Space{style_reset}"
-                );
                 return Some(0.0);
             }
 
@@ -81,10 +73,6 @@ impl MemoryManager {
             if percentage > 100.0 {
                 return Some(0.0);
             }
-            println!(
-                "{color_blue}[Memory Manager] Available Memory: {:?} %{style_reset}",
-                percentage
-            );
             Some(percentage)
         } else {
             None
