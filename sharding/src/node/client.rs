@@ -279,7 +279,6 @@ impl NodeRole for Client {
                             return None;
                         }
                     };
-                    _ = stream.write_all(message.to_string().as_bytes());
                 } else {
                     eprintln!("No valid router found during reconnection.");
                 }
