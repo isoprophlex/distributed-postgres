@@ -781,6 +781,7 @@ impl NodeRole for Router {
             handles.push(_shard_response_handle);
         }
 
+        let mut table_errors = 0;
         // Wait for all threads to finish
         for handle in handles {
             println!("handle.join()");
@@ -790,6 +791,7 @@ impl NodeRole for Router {
                         Ok(_) => {},
                         Err((err, shard_id)) => {
                             println!("Error in handle.join()");
+                            table_errors += if err == SendQueryError::UndefinedTable {1} else {0};
                             let client_was_closed = err == SendQueryError::ClientIsClosed;
                             let shards_count = shards.len();
 
@@ -817,6 +819,10 @@ impl NodeRole for Router {
                     println!("Thread panicked");
                 }
             };
+        }
+
+        if table_errors == shards.len() {
+            return Some("Relation (table) does not exist".to_string());
         }
 
         println!("All threads finished");
