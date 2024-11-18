@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use postgres::{Client as PostgresClient, Row};
+use postgres::{row, Client as PostgresClient, Row};
 use rust_decimal::Decimal;
 extern crate users;
 use super::messages::node_info::find_name_for_node;
@@ -700,7 +700,7 @@ impl Router {
                 .get_max_ids_for_shard_table(&shard_id, &table_name)
             else {
                 // No offset to be formatted
-                return Some(rows.convert_to_string());
+                return Some(format_rows_without_offset(rows));
             };
             rows_offset.push((rows, last_offset));
             last_offset = offset;
@@ -855,25 +855,25 @@ impl NodeRole for Router {
         };
 
         let response = if query_is_select(&query) && !responses.is_empty() {
-            match self.format_response(responses, &query) {
-                Some(response) => response,
-                None => {
-                    eprintln!("Failed to format response");
-                    return None;
+                match self.format_response(responses, &query) {
+                    Some(response) => response,
+                    None => {
+                        eprintln!("Failed to format response");
+                        return None;
+                    }
                 }
-            }
-        } else {
-            let rows_lock = match rows.lock() {
-                Ok(rows) => rows,
-                Err(_) => {
-                    eprintln!("Failed to get rows lock");
-                    return None;
-                }
+            } else {
+                let rows_lock = match rows.lock() {
+                    Ok(rows) => rows,
+                    Err(_) => {
+                        eprintln!("Failed to get rows lock");
+                        return None;
+                    }
+                };
+                // Query is not select or shard response is empty.
+                // Therefore, there's no need to format the response to abstract the offset
+                rows_lock.convert_to_string()
             };
-            // Query is not select or shard response is empty.
-            // Therefore, there's no need to format the response to abstract the offset
-            rows_lock.convert_to_string()
-        };
 
         print_query_response(response.clone());
         Some(response)
@@ -1061,7 +1061,7 @@ impl Router {
         // drop shard lock
         drop(shards);
 
-        let tables = self.get_all_tables_from_self();
+        let tables = self.get_all_tables_from_self(true);
 
         // Prepare data structures
         let mut starting_queries = Vec::new();
@@ -1210,7 +1210,20 @@ impl Router {
 
     fn empty_tables(&mut self, tables: &[String]) {
         for table in tables {
-            let drop_query = format!("DELETE * FROM {}", table);
+            // Check if table has data before trying to delete all
+            let has_data_query = format!("select count(1) where exists (select * from {})", table);
+            let rows = match self.get_rows_for_query(&has_data_query) {
+                Some(rows) => rows,
+                None => {
+                    continue;
+                }
+            };
+
+            if rows.len() == 0 {
+                continue;
+            }
+
+            let drop_query = format!("DELETE FROM {}", table);
             let _ = self.get_rows_for_query(&drop_query);
             println!("Table {} was emptied", table);
         }

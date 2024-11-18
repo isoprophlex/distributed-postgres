@@ -472,7 +472,7 @@ impl Shard {
 
     // Set the max ids for all tables in tables_max_id
     fn set_max_ids(&mut self) {
-        let tables = self.get_all_tables_from_self();
+        let tables = self.get_all_tables_from_self(false);
         for table in tables {
             let query = format!("SELECT MAX(id) FROM {table}");
             if let Some(rows) = self.get_rows_for_query(&query) {
