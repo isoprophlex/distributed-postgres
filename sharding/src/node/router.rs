@@ -784,13 +784,11 @@ impl NodeRole for Router {
         let mut table_errors = 0;
         // Wait for all threads to finish
         for handle in handles {
-            println!("handle.join()");
             match handle.join() {
                 Ok(result) => {
                     match result {
                         Ok(_) => {},
                         Err((err, shard_id)) => {
-                            println!("Error in handle.join()");
                             table_errors += if err == SendQueryError::UndefinedTable {1} else {0};
                             let client_was_closed = err == SendQueryError::ClientIsClosed;
                             let shards_count = shards.len();
