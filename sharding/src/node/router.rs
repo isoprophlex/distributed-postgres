@@ -586,24 +586,72 @@ impl NodeRole for Router {
             return Some(response);
         }
 
-        let mut shards_responses: IndexMap<String, Vec<Row>> = IndexMap::new();
-        let mut rows = Vec::new();
+        type ShardResponses = Arc<Mutex<IndexMap<String, Vec<Row>>>>;
+
+        let shards_responses: ShardResponses = Arc::new(Mutex::new(IndexMap::new()));
+        let rows = Arc::new(Mutex::new(Vec::new()));
+        let mut handles = Vec::new();
+
         for shard_id in shards {
-            // TODO-SHARD we should add a thread here to make it parallel
-            let shard_response = self.send_query_to_shard(&shard_id.clone(), &query, is_insert);
-            if !shard_response.is_empty() {
-                shards_responses.insert(shard_id, shard_response.clone());
-                rows.extend(shard_response);
-            }
+            let mut self_clone = self.clone();
+            let query_clone = query.clone();
+            let rows_clone = rows.clone();
+            let shards_repsonses_clone = shards_responses.clone();
+
+            let _shard_response_handle = thread::spawn(move || {
+                let shard_response =
+                    self_clone.send_query_to_shard(&shard_id, &query_clone, is_insert);
+                if !shard_response.is_empty() {
+                    let mut shards_responses = match shards_repsonses_clone.lock() {
+                        Ok(shards_responses) => shards_responses,
+                        Err(_) => {
+                            eprintln!("Failed to get shards responses lock");
+                            return;
+                        }
+                    };
+
+                    shards_responses.insert(shard_id, shard_response.clone());
+
+                    let mut rows_lock = match rows_clone.lock() {
+                        Ok(rows) => rows,
+                        Err(_) => {
+                            eprintln!("Failed to get rows lock");
+                            return;
+                        }
+                    };
+                    rows_lock.extend(shard_response);
+                }
+            });
+            handles.push(_shard_response_handle);
         }
 
-        let response = if query_is_select(&query) && !shards_responses.is_empty() {
+        // Wait for all threads to finish
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let responses = match shards_responses.lock() {
+            Ok(shards_responses) => shards_responses.clone(),
+            Err(_) => {
+                eprintln!("Failed to get shards responses lock");
+                return None;
+            }
+        };
+
+        let response = if query_is_select(&query) && !responses.is_empty() {
             println!("Query is SELECT and shards_responses is not empty");
-            self.format_response(shards_responses, &query)
+            self.format_response(responses, &query)
         } else {
+            let rows_lock = match rows.lock() {
+                Ok(rows) => rows,
+                Err(_) => {
+                    eprintln!("Failed to get rows lock");
+                    return None;
+                }
+            };
             // Query is not select or shard response is empty.
             // Therefore, there's no need to format the response to abstract the offset
-            rows.convert_to_string()
+            rows_lock.convert_to_string()
         };
 
         print_query_response(response.clone());
@@ -803,7 +851,7 @@ impl Router {
         let columns_definitions: Vec<String> = rows
             .iter()
             .enumerate()
-            .map(|(i, row)| {
+            .map(|(_, row)| {
                 let column_name: String = row.get("column_name");
                 // PostgresClient does not support getting the PrimaryKey, so all tables will have a SERIAL PRIMARY KEY called "id". If you want to fix this, be my guest
                 let data_type: String = if column_name == "id" {
