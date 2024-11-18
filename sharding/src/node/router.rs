@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use postgres::{row, Client as PostgresClient, Row};
+use postgres::{Client as PostgresClient, Row};
 use rust_decimal::Decimal;
 extern crate users;
 use super::messages::node_info::find_name_for_node;
