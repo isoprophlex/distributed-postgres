@@ -239,30 +239,21 @@ impl NodeRole for Client {
             eprintln!("Reconnecting to new router...");
             drop(stream);
             // Obtener un nuevo router y actualizar el canal
-            if let Some(new_stream) = Self::get_router_info(get_nodes_config()) {
-                self.router_postgres_client = Channel {
-                    stream: Arc::new(Mutex::new(new_stream)),
-                };
-                stream = match self.router_postgres_client.stream.lock() {
-                    Ok(stream) => stream,
-                    Err(e) => {
-                        eprintln!("Failed to lock the new stream: {:?}", e);
-                        return None;
-                    }
-                };
-                // Reintentar el envío con el nuevo router
-                if let Err(e) = stream.write_all(message.to_string().as_bytes()) {
-                    eprintln!("Failed to send query after reconnecting: {:?}", e);
-                    return None;
-                }
-                println!("{color_bright_blue}Query sent to new router{style_reset}");
-            } else {
-                eprintln!("No valid router found during reconnection.");
+            let new_stream = match Self::get_router_info(get_nodes_config()) {
+                Some(new_stream) => new_stream,
+                None => {
+                    eprintln!("No valid router found during reconnection.");
                 return None;
-            }
-        } else {
-            println!("{color_bright_blue}Query sent to router{style_reset}");
+                },
+            };
+            
+            self.router_postgres_client = Channel {
+                stream: Arc::new(Mutex::new(new_stream)),
+            };
+            return self.send_query(query);
         }
+
+        println!("{color_bright_blue}Query sent to router{style_reset}");
 
         // Preparar el buffer de respuesta
         let mut buffer: [u8; MAX_PAGE_SIZE] = [0; MAX_PAGE_SIZE];
@@ -277,16 +268,19 @@ impl NodeRole for Client {
                 eprintln!("{color_bright_red}Failed to read response or empty response received.{style_reset}");
                 eprintln!("Reconnecting to new router...");
                 drop(stream);
+
                 // Obtener un nuevo router y actualizar el canal
                 if let Some(new_stream) = Self::get_router_info(get_nodes_config()) {
                     self.router_postgres_client = Channel {
                         stream: Arc::new(Mutex::new(new_stream)),
                     };
                     println!("{color_bright_green}Reconnected to new router{style_reset}");
-                    return self.send_query(query);
-                } else {
-                    eprintln!("No valid router found during reconnection.");
+                    let new_response = self.send_query(query);
+                    println!("{color_bright_green}Came back{style_reset}");
+                    return new_response;
                 }
+
+                eprintln!("No valid router found during reconnection.");
                 None
             }
         }
