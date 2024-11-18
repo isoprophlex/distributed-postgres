@@ -243,10 +243,10 @@ impl NodeRole for Client {
                 Some(new_stream) => new_stream,
                 None => {
                     eprintln!("No valid router found during reconnection.");
-                return None;
-                },
+                    return None;
+                }
             };
-            
+
             self.router_postgres_client = Channel {
                 stream: Arc::new(Mutex::new(new_stream)),
             };
@@ -276,7 +276,6 @@ impl NodeRole for Client {
                     };
                     println!("{color_bright_green}Reconnected to new router{style_reset}");
                     let new_response = self.send_query(query);
-                    println!("{color_bright_green}Came back{style_reset}");
                     return new_response;
                 }
 
