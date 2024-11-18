@@ -293,7 +293,8 @@ impl Router {
     }
 
     fn duplicate_tables_into(&mut self, shard_id: &str) {
-        let tables = self.get_all_tables_from_shards();
+        let mut tables = self.get_all_tables_from_shards();
+        tables.extend(self.get_all_tables_from_self(false));
 
         println!("Tables: {tables:?}");
 
