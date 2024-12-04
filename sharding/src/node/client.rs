@@ -206,7 +206,7 @@ impl NodeRole for Client {
 
     fn send_query(&mut self, query: &str) -> Option<String> {
         if query == "whoami;" {
-            println!("> I am Client: {}:{}\n", self.ip, self.port);
+            println!("{color_bright_green}> I am Client: {}:{}{style_reset}\n", self.ip, self.port);
             return None;
         }
 

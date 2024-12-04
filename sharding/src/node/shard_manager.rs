@@ -30,7 +30,7 @@ impl ShardManager {
         let mut shards = match self.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                eprintln!("Failed to lock shards");
                 return;
             }
         };
@@ -41,7 +41,7 @@ impl ShardManager {
         let shards = match self.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                eprintln!("Failed to lock shards");
                 return None;
             }
         };
@@ -56,7 +56,7 @@ impl ShardManager {
         let shards = match self.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                eprintln!("Failed to lock shards");
                 return 0;
             }
         };
@@ -77,7 +77,7 @@ impl ShardManager {
         let mut shards = match self.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                eprintln!("Failed to lock shards");
                 return None;
             }
         };
@@ -107,7 +107,7 @@ impl ShardManager {
         let mut shards = match self.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                eprintln!("Failed to lock shards");
                 return;
             }
         };
@@ -128,7 +128,7 @@ impl ShardManager {
         let shard_max_ids = match self.shard_max_ids.lock() {
             Ok(shard_max_ids) => shard_max_ids,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shard_max_ids{style_reset}");
+                eprintln!("Failed to lock shard_max_ids");
                 return;
             }
         };
@@ -140,7 +140,7 @@ impl ShardManager {
         let shard_max_ids = match self.shard_max_ids.lock() {
             Ok(shard_max_ids) => shard_max_ids,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shard_max_ids{style_reset}");
+                eprintln!("Failed to lock shard_max_ids");
                 return Vec::new();
             }
         };
@@ -159,7 +159,7 @@ impl ShardManager {
         let shard_max_ids = match self.shard_max_ids.lock() {
             Ok(shard_max_ids) => shard_max_ids,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shard_max_ids{style_reset}");
+                eprintln!("Failed to lock shard_max_ids");
                 return None;
             }
         };

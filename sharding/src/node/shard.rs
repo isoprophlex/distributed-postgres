@@ -6,6 +6,7 @@ use super::tables_id_info::TablesIdInfo;
 use crate::node::messages::node_info::find_name_for_node;
 use crate::utils::common::{connect_to_node, ConvertToString};
 use crate::utils::node_config::{get_memory_config, get_nodes_config};
+use crate::utils::queries::query_affects_memory_state;
 use indexmap::IndexMap;
 use inline_colorization::*;
 use postgres::Client as PostgresClient;
@@ -50,8 +51,7 @@ impl Shard {
         let backend: PostgresClient = match connect_to_node(ip, port) {
             Ok(backend) => backend,
             Err(e) => {
-                eprintln!("Failed to connect to the database: {e}");
-                panic!("Failed to connect to the database");
+                panic!("Failed to connect to the database: {e}");
             }
         };
 
@@ -78,7 +78,7 @@ impl Shard {
 
         let _ = shard.update();
 
-        println!("{color_bright_green}Shard created successfully. Shard: {shard:?}{style_reset}");
+        println!("{color_bright_green}Shard created successfully. Shard: {}, {}:{} {style_reset}", shard.name, ip, port);
 
         shard
     }
@@ -451,7 +451,7 @@ impl Shard {
                 let max_id: i32 = if let Ok(id) = rows[0].try_get(0) {
                     id
                 } else {
-                    eprintln!("Failed to get max id for table: {table}. Table might be empty",);
+                    // Table is empty
                     0
                 };
                 let mut tables_max_id = match self.tables_max_id.as_ref().try_lock() {
@@ -482,7 +482,10 @@ impl NodeRole for Shard {
         }
 
         let rows = self.get_rows_for_query(query)?;
-        let _ = self.update(); // Updates memory and tables_max_id
+        if query_affects_memory_state(query) {
+            let _ = self.update(); // Updates memory and tables_max_id
+        }
+
         Some(rows.convert_to_string())
     }
 

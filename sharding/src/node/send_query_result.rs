@@ -25,7 +25,6 @@ impl std::error::Error for SendQueryError {}
 
 pub fn is_connection_closed(err: &Error) -> bool {
     let err = format!("{}", err);
-    println!("Analyzing error: {}", err);
     return err.contains("connection closed") || err.contains("kind: Connection reset by peer");
 }
 

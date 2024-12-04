@@ -45,7 +45,7 @@ pub struct Router {
 impl Router {
     /// Creates a new Router node with the given port and ip, connecting it to the shards specified in the configuration file.
     pub fn new(ip: &str, port: &str) -> Option<Self> {
-        println!("Inside new::Router");
+        println!("Creating Router...");
         Router::initialize_router_with_connections(ip, port)
     }
 
@@ -63,7 +63,6 @@ impl Router {
             }
         };
         let port = port_number + 1000;
-        println!("Attempting to bind listener to port: {}", port);
 
         let listener = match TcpListener::bind(format!("{}:{}", ip, port)) {
             Ok(listener) => listener,
@@ -73,7 +72,7 @@ impl Router {
             }
         };
 
-        println!("wait_for_incoming_connections");
+        println!("Waiting for incoming connections.\n\0");
 
         loop {
             let stopped = {
@@ -293,7 +292,9 @@ impl Router {
         let mut tables = self.get_all_tables_from_shards();
         tables.extend(self.get_all_tables_from_self(false));
 
-        println!("Tables: {tables:?}");
+        // delete duplicated tables 
+        tables.sort();
+        tables.dedup();
 
         for table in tables {
             let create_query = self.generate_create_table_query(&table, None);
@@ -365,12 +366,12 @@ impl Router {
             .set_health_connection(node_ip.as_str(), node_port.as_str())
             .is_err()
         {
-            eprintln!("Failed to connect to node: {}", node.name);
+            eprintln!("Could not connect to node: {} at {}:{}", node.name, node_ip, node_port);
             return;
         }
 
         let Ok(shard_client) = connect_to_node(&node_ip, &node_port) else {
-            eprintln!("Failed to connect to port: {node_port}");
+            eprintln!("Could not connect to node: {} at {}:{}", node.name, node_ip, node_port);
             return;
         };
 
@@ -507,7 +508,6 @@ impl Router {
         let max_ids_info = max_ids_info;
 
         println!("{color_bright_green}Memory size: {memory_size}{style_reset}");
-        println!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
         self.save_shard_in_manager(memory_size, node_port, max_ids_info);
         true
     }
@@ -534,7 +534,6 @@ impl Router {
         println!(
             "{color_bright_green}Shard {node_port} updated its memory size to {memory_size}{style_reset}"
         );
-        println!("{color_bright_green}Max Ids for Shard: {max_ids_info:?}{style_reset}");
         self.update_shard_in_manager(memory_size, node_port, max_ids_info);
         true
     }
@@ -567,7 +566,7 @@ impl Router {
         };
 
         let port = port_number + 1000;
-        println!("Attempting to connect to port: {}", port);
+        println!("Attempting to connect to: {}:{}", node_ip, port);
         match TcpStream::connect(format!("{node_ip}:{port}")) {
             Ok(stream) => {
                 println!(
@@ -700,7 +699,7 @@ impl NodeRole for Router {
 
     fn send_query(&mut self, received_query: &str) -> Option<String> {
         if received_query == "whoami;" {
-            println!("> I am Router: {}:{}\n", self.ip, self.port);
+            println!("{color_bright_green}> I am Router: {}:{}{style_reset}\n", self.ip, self.port);
             return None;
         }
 
@@ -825,7 +824,6 @@ impl NodeRole for Router {
             return Some("Relation (table) does not exist".to_string());
         }
 
-        println!("All threads finished");
         let responses = match shards_responses.lock() {
             Ok(shards_responses) => shards_responses.clone(),
             Err(_) => {
@@ -1091,8 +1089,6 @@ impl Router {
             table
         );
 
-        println!("Query: {query}");
-
         let rows = if let Some(shard) = shard_id {
             println!("Sending query to shard {shard}: {query}");
             match self.send_query_to_shard(&shard, &query, false) {
@@ -1111,8 +1107,6 @@ impl Router {
                 }
             }
         };
-
-        println!("Rows: {rows:?}");
 
         let mut columns_definitions: Vec<String> = rows
             .iter()
@@ -1202,7 +1196,6 @@ impl Router {
 
             let drop_query = format!("DELETE FROM {}", table);
             let _ = self.get_rows_for_query(&drop_query);
-            println!("Table {} was emptied", table);
         }
     }
 }
