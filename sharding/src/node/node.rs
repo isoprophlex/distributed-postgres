@@ -6,6 +6,7 @@ use crate::utils::node_config::INIT_HISTORY_FILE_PATH;
 use crate::utils::queries::print_rows;
 use postgres::Row;
 use std::ffi::CStr;
+use inline_colorization::*;
 use std::fmt::Error;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -34,7 +35,6 @@ pub trait NodeRole {
             return rows.into_iter().map(|row| row.get(0)).collect();
         }
     
-        // Step 3: Check if tables have data dynamically
         let mut non_empty_tables = Vec::new();
         for row in rows {
             let table_name: String = row.get(0);
@@ -244,8 +244,8 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                     NodeType::Shard
                 };
                 match change_role(role.to_owned(), transmitter.clone()) {
-                    Ok(_) => {
-                        println!("Role changing finished successfully");
+                    Ok(msg) => {
+                        println!("{color_bright_green}{msg}{style_reset}");
                     }
                     Err(_) => {
                         println!("Error could not change role to {:?}", role);
@@ -259,7 +259,7 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
     });
 }
 
-fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Error> {
+fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<String, Error> {
     if new_role == NodeType::Client {
         eprintln!("NodeRole cannot be changed to Client, it is not a valid role");
         return Err(Error);
@@ -270,7 +270,7 @@ fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Erro
 
     if node_instance.node_type == new_role {
         confirm_role_change(transmitter);
-        return Ok(());
+        return Ok("".to_string());
     }
 
     let ip = node_instance.ip.clone();
@@ -301,7 +301,7 @@ fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Erro
     }
 
     confirm_role_change(transmitter);
-    Ok(())
+    Ok(format!("Role changing finished successfully. Node is now {new_role:?}").to_string())
 }
 
 fn confirm_role_change(transmitter: Sender<bool>) {
