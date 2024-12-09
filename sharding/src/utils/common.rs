@@ -16,17 +16,14 @@ pub fn get_username_dynamically() -> String {
 pub fn connect_to_node(ip: &str, port: &str) -> Result<PostgresClient, postgres::Error> {
     let username = get_username_dynamically();
 
-    match PostgresClient::connect(
+    PostgresClient::connect(
         format!(
             "host={} port={} user={} dbname=template1",
             ip, port, username
         )
         .as_str(),
         NoTls,
-    ) {
-        Ok(shard_client) => Ok(shard_client),
-        Err(e) => Err(e),
-    }
+    )
 }
 
 #[derive(Clone)]

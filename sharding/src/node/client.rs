@@ -171,7 +171,7 @@ impl Client {
                     println!(
                         "{color_bright_green}Connected to router stream {}:{}{style_reset}",
                         node_ip,
-                        connections_port.to_string()
+                        connections_port
                     );
                     return Some(router_stream);
                 }
@@ -183,7 +183,7 @@ impl Client {
 
     /// Handles the received message from a connection.
     fn handle_received_message(buffer: &mut [u8]) {
-        let message_string = String::from_utf8_lossy(&buffer);
+        let message_string = String::from_utf8_lossy(buffer);
         let response_message = match message::Message::from_string(&message_string) {
             Ok(message) => message,
             Err(_) => {

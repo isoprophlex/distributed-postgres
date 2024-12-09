@@ -96,7 +96,7 @@ mod tests {
         let unavailable_memory_perc = 0.0;
         let available_memory_perc =
             MemoryManager::get_available_memory_percentage(unavailable_memory_perc);
-        assert_eq!(available_memory_perc.is_some(), true);
+        assert!(available_memory_perc.is_some());
     }
 
     #[test]

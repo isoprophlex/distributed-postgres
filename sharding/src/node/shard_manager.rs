@@ -49,10 +49,7 @@ impl ShardManager {
             }
         };
 
-        match shards.peek() {
-            Some(object) => Some(object.value.clone()),
-            None => None,
-        }
+        shards.peek().map(|object| object.value.clone())
     }
 
     /// Returns the number of shards in the heap.
@@ -175,10 +172,7 @@ impl ShardManager {
         };
 
         match shard_max_ids.get(shard_id) {
-            Some(tables_id_info) => match tables_id_info.get(table) {
-                Some(max_id) => Some(*max_id),
-                None => None,
-            },
+            Some(tables_id_info) => tables_id_info.get(table).copied(),
             None => None,
         }
     }

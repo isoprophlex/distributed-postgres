@@ -88,17 +88,13 @@ fn get_id_index(query: &str) -> Option<usize> {
     let index3 = query_aux.find(query_substring3);
     let index4 = query_aux.find(query_substring4);
 
-    return if let Some(index1) = index1 {
+    if let Some(index1) = index1 {
         Some(index1 + offset1)
     } else if let Some(index2) = index2 {
         Some(index2 + offset2)
     } else if let Some(index3) = index3 {
         Some(index3 + offset3)
-    } else if let Some(index4) = index4 {
-        Some(index4 + offset4)
-    } else {
-        None
-    };
+    } else { index4.map(|index4| index4 + offset4) }
 }
 
 fn get_trimmed_id(query: &str, from: usize) -> String {
@@ -182,11 +178,11 @@ impl ConvertToStringOffset for Row {
         }
 
         for (i, _) in self.columns().iter().enumerate() {
-            let is_id = self.columns()[i].name().to_string() == "id";
+            let is_id = self.columns()[i].name() == "id";
 
             // Try to get the value as a String, If it fails, try to get it as an i32. Same for f64 and Decimal
             let formatted_value = match self.try_get::<usize, String>(i) {
-                Ok(v) => format!("{}", v),
+                Ok(v) => v.to_string(),
                 Err(_) => match self.try_get::<usize, i32>(i) {
                     Ok(v) => format!("{}", v),
                     Err(_) => match self.try_get::<usize, f64>(i) {
@@ -245,7 +241,7 @@ impl ConvertToString for Vec<Row> {
 fn get_column_names(columns: &[Column]) -> String {
     let mut result = String::new();
     for column in columns {
-        result.push_str(&column.name().to_string());
+        result.push_str(column.name());
         result.push_str(" | ");
     }
     result

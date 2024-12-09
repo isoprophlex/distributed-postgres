@@ -741,7 +741,7 @@ impl NodeRole for Router {
         }
 
         // If the router suddenly is alone, it's going to have to hold on to the data until the shards are available again. So the tables must be available in its backend too.
-        if query_is_create_or_drop(&received_query) {
+        if query_is_create_or_drop(received_query) {
             _ = self.send_query_to_backend(received_query);
         }
 
@@ -798,7 +798,7 @@ impl NodeRole for Router {
                         };
                         rows_lock.extend(shard_response);
                     }
-                    return Ok(());
+                    Ok(())
                 });
             handles.push(_shard_response_handle);
         }
@@ -990,13 +990,13 @@ impl Router {
                 Err(error) => {
                     eprintln!("Failed to send the query to the shard: ");
                     if is_undefined_table(&error) {
-                        eprint!("Relation (table) does not exist\n");
+                        eprintln!("Relation (table) does not exist");
                         return Err((SendQueryError::UndefinedTable, None));
                     } else if is_connection_closed(&error) {
                         println!("Connection closed with shard {shard_id}");
                         return Err((SendQueryError::ClientIsClosed, Some(shard_id.to_string())));
                     } else {
-                        eprint!("{error:?}\n");
+                        eprintln!("{error:?}");
                     }
                     return Err((SendQueryError::Other(format!("{error:?}")), None));
                 }
@@ -1144,8 +1144,7 @@ impl Router {
 
         let mut columns_definitions: Vec<String> = rows
             .iter()
-            .enumerate()
-            .map(|(_, row)| {
+            .map(|row| {
                 let column_name: String = row.get("column_name");
                 // PostgresClient does not support getting the PrimaryKey, so all tables will have a SERIAL PRIMARY KEY called "id". If you want to fix this, be my guest
                 let data_type: String = if column_name == "id" {
@@ -1226,7 +1225,7 @@ impl Router {
                 }
             };
 
-            if rows.len() == 0 {
+            if rows.is_empty() {
                 continue;
             }
 

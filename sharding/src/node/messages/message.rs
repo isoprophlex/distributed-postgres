@@ -270,7 +270,7 @@ impl Message {
         // Query Data
         result.push(' ');
         if let Some(query) = &self.query_data {
-            result.push_str(&query);
+            result.push_str(query);
         } else {
             result.push_str("None");
         }
@@ -331,10 +331,7 @@ impl Message {
                     query.push_str(part);
                     query.push(' ');
                 }
-                match query.split(';').next() {
-                    Some(query) => Some(query.to_string()),
-                    None => None,
-                }
+                query.split(';').next().map(|query| query.to_string())
             }
             None => None,
         };
@@ -601,7 +598,7 @@ mod tests {
             "INIT_CONNECTION 0.5 departments:5,employees:3 None None\n",
         ];
 
-        assert!(options.contains(&&message.to_string().as_str()));
+        assert!(options.contains(&message.to_string().as_str()));
     }
 
     #[test]

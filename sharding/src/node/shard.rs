@@ -452,10 +452,10 @@ impl Shard {
             Ok(mut memory_manager) => memory_manager.update(),
             Err(_) => {
                 eprintln!("Failed to get memory manager");
-                return Err(io::Error::new(
+                Err(io::Error::new(
                     io::ErrorKind::Other,
                     "Failed to get memory manager",
-                ));
+                ))
             }
         }
     }
