@@ -570,7 +570,7 @@ impl Router {
         match TcpStream::connect(format!("{node_ip}:{port}")) {
             Ok(stream) => {
                 println!(
-                    "{color_bright_green}Health connection established with {node_ip}:{port}{style_reset}"
+                    "{color_bright_green}Connection established with {node_ip}:{port}{style_reset}"
                 );
                 Ok(Channel {
                     stream: Arc::new(Mutex::new(stream)),
@@ -985,6 +985,7 @@ impl Router {
     }
 
     fn send_query_to_backend(&mut self, query: &str) -> Option<String> {
+        println!("{color_bright_green}Sending query to Self: {query}{style_reset}");
         let rows = self.get_rows_for_query(query)?;
         let response = format_rows_without_offset(rows);
         Some(response)
@@ -1090,7 +1091,7 @@ impl Router {
         );
 
         let rows = if let Some(shard) = shard_id {
-            println!("Sending query to shard {shard}: {query}");
+            println!("{color_bright_green}Sending query to shard {shard}: {query}{style_reset}");
             match self.send_query_to_shard(&shard, &query, false) {
                 Ok(rows) => rows,
                 Err(_) => {

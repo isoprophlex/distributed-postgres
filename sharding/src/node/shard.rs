@@ -114,10 +114,6 @@ impl Shard {
             let mut candidate_stream =
                 match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
                     Ok(stream) => {
-                        println!(
-                        "{color_bright_green}Health connection established with {}:{}{style_reset}",
-                        candidate_ip, candidate_port
-                    );
                         stream
                     }
                     Err(_) => {
@@ -130,6 +126,11 @@ impl Shard {
                 port: port.to_string(),
                 name: name.to_string(),
             });
+
+            println!(
+                "{color_bright_green}Sending HelloFromNode to {}:{}{style_reset}",
+                candidate_ip, candidate_port
+            );
 
             match candidate_stream.write_all(hello_message.to_string().as_bytes()) {
                 Ok(_) => {}
