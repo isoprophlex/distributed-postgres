@@ -1,5 +1,4 @@
 use indexmap::IndexMap;
-use inline_colorization::*;
 use std::{
     cmp::Ordering,
     collections::BinaryHeap,

@@ -2,7 +2,7 @@
 
 use core::panic;
 use postgres::{Client, NoTls};
-use sharding::node::node::{get_node_role, InitNodeInstance, NodeRole, NodeType};
+use sharding::node::node::NodeRole;
 use std::{
     fs,
     io::Write,
