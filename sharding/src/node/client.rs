@@ -212,7 +212,10 @@ impl NodeRole for Client {
     /// Sends query to the router and returns the response.
     fn send_query(&mut self, query: &str) -> Option<String> {
         if query == "whoami;" {
-            println!("{color_bright_green}> I am Client: {}:{}{style_reset}\n", self.ip, self.port);
+            println!(
+                "{color_bright_green}> I am Client: {}:{}{style_reset}\n",
+                self.ip, self.port
+            );
             return None;
         }
 

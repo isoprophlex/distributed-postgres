@@ -4,9 +4,9 @@ use crate::node::client::Client;
 use crate::utils::node_config::get_nodes_config_raft;
 use crate::utils::node_config::INIT_HISTORY_FILE_PATH;
 use crate::utils::queries::print_rows;
+use inline_colorization::*;
 use postgres::Row;
 use std::ffi::CStr;
-use inline_colorization::*;
 use std::fmt::Error;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -27,16 +27,17 @@ pub trait NodeRole {
 
     /// Returns all tables currently existing in the node's PostgreSQL cluster
     fn get_all_tables_from_self(&mut self, check_if_empty: bool) -> Vec<String> {
-        let query = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
+        let query =
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
         let Some(rows) = self.get_rows_for_query(query) else {
             return Vec::new();
         };
-    
+
         // If no need to check for emptiness, return all table names
         if !check_if_empty {
             return rows.into_iter().map(|row| row.get(0)).collect();
         }
-    
+
         let mut non_empty_tables = Vec::new();
         for row in rows {
             let table_name: String = row.get(0);
@@ -45,7 +46,7 @@ pub trait NodeRole {
                 non_empty_tables.push(table_name);
             }
         }
-    
+
         non_empty_tables
     }
 

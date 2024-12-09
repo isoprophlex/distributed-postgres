@@ -298,7 +298,7 @@ impl Router {
         let mut tables = self.get_all_tables_from_shards();
         tables.extend(self.get_all_tables_from_self(false));
 
-        // delete duplicated tables 
+        // delete duplicated tables
         tables.sort();
         tables.dedup();
 
@@ -374,12 +374,18 @@ impl Router {
             .set_health_connection(node_ip.as_str(), node_port.as_str())
             .is_err()
         {
-            eprintln!("Could not connect to node: {} at {}:{}", node.name, node_ip, node_port);
+            eprintln!(
+                "Could not connect to node: {} at {}:{}",
+                node.name, node_ip, node_port
+            );
             return;
         }
 
         let Ok(shard_client) = connect_to_node(&node_ip, &node_port) else {
-            eprintln!("Could not connect to node: {} at {}:{}", node.name, node_ip, node_port);
+            eprintln!(
+                "Could not connect to node: {} at {}:{}",
+                node.name, node_ip, node_port
+            );
             return;
         };
 
@@ -626,7 +632,7 @@ impl Router {
         }
     }
 
-    /// Function that allows the router to get the specific shard that owns a given ID, and format the query with the new ID to be sent to the shard. 
+    /// Function that allows the router to get the specific shard that owns a given ID, and format the query with the new ID to be sent to the shard.
     /// This is needed because the router abstracts the client from the sharding implementation, joining all the shards' data into a single table with a unique ID, using an offset system to avoid duplicated IDs. So, when a query with a specific ID is received, the router needs to find the specific shard that owns that ID and format the query with the new ID to be sent to the shard.
     fn get_specific_shard_with(&mut self, mut id: i64, query: &str) -> (Vec<String>, bool, String) {
         let shards = match self.shards.lock() {
@@ -715,7 +721,10 @@ impl NodeRole for Router {
 
     fn send_query(&mut self, received_query: &str) -> Option<String> {
         if received_query == "whoami;" {
-            println!("{color_bright_green}> I am Router: {}:{}{style_reset}\n", self.ip, self.port);
+            println!(
+                "{color_bright_green}> I am Router: {}:{}{style_reset}\n",
+                self.ip, self.port
+            );
             return None;
         }
 
@@ -887,7 +896,6 @@ impl NodeRole for Router {
 
 // MARK: - Communication with shards
 impl Router {
-
     /// Gets the stream for the shard with the given shard id.
     fn get_stream(&self, shard_id: &str) -> Option<Arc<Mutex<TcpStream>>> {
         let Ok(comm_channels) = self.comm_channels.read() else {

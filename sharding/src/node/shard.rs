@@ -10,12 +10,12 @@ use crate::utils::queries::query_affects_memory_state;
 use indexmap::IndexMap;
 use inline_colorization::*;
 use postgres::Client as PostgresClient;
+use std::fmt;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::{io, thread};
-use std::fmt;
 
 extern crate users;
 
@@ -79,7 +79,10 @@ impl Shard {
 
         let _ = shard.update();
 
-        println!("{color_bright_green}Shard created successfully. Shard: {}, {}:{} {style_reset}", shard.name, ip, port);
+        println!(
+            "{color_bright_green}Shard created successfully. Shard: {}, {}:{} {style_reset}",
+            shard.name, ip, port
+        );
 
         shard
     }
@@ -116,9 +119,7 @@ impl Shard {
 
             let mut candidate_stream =
                 match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
-                    Ok(stream) => {
-                        stream
-                    }
+                    Ok(stream) => stream,
                     Err(_) => {
                         continue;
                     }

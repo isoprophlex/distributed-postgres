@@ -16,7 +16,6 @@ pub(crate) struct ShardManager {
 }
 
 impl ShardManager {
-
     /// Creates a new ShardManager.
     pub fn new() -> Self {
         ShardManager {
