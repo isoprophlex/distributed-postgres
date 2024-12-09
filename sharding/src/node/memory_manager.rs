@@ -12,6 +12,7 @@ pub struct MemoryManager {
 }
 
 impl MemoryManager {
+    /// Creates a new MemoryManager.
     pub fn new(unavailable_memory_perc: f64) -> Self {
         let available_memory_perc =
             match Self::get_available_memory_percentage(unavailable_memory_perc) {
@@ -24,6 +25,7 @@ impl MemoryManager {
         }
     }
 
+    /// Updates the available memory percentage.
     pub fn update(&mut self) -> Result<(), io::Error> {
         self.available_memory_perc =
             match Self::get_available_memory_percentage(self.unavailable_memory_perc) {
@@ -38,6 +40,7 @@ impl MemoryManager {
         Ok(())
     }
 
+    /// Returns the available memory percentage.
     fn get_available_memory_percentage(unavailable_memory_perc: f64) -> Option<f64> {
         if unavailable_memory_perc == 100.0 {
             return Some(0.0);

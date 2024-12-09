@@ -1,8 +1,10 @@
 use crate::utils::common::{ConvertToString, FromString};
 use indexmap::IndexMap;
 
+/// Type alias for the tables id info, which is a hashmap with the table name as key and the max id available in said table as value.
 pub type TablesIdInfo = IndexMap<String, i64>;
 
+/// Implementation of ConvertToString for TablesIdInfo
 impl ConvertToString for TablesIdInfo {
     fn convert_to_string(&self) -> String {
         if self.is_empty() {
@@ -17,6 +19,7 @@ impl ConvertToString for TablesIdInfo {
     }
 }
 
+/// Implementation of FromString for TablesIdInfo
 impl FromString for TablesIdInfo {
     fn from_string(string: &str) -> Self {
         let mut result = IndexMap::new();

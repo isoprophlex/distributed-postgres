@@ -15,6 +15,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::{io, thread};
+use std::fmt;
 
 extern crate users;
 
@@ -32,7 +33,7 @@ pub struct Shard {
     pub stopped: Arc<Mutex<bool>>,
 }
 
-use std::fmt;
+/// Implementation of Debug for Shard
 impl fmt::Debug for Shard {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Shard")
@@ -83,12 +84,14 @@ impl Shard {
         shard
     }
 
+    /// Initializes the memory manager for the shard
     fn initialize_memory_manager() -> MemoryManager {
         let config = get_memory_config();
         let reserved_memory = config.unavailable_memory_perc;
         MemoryManager::new(reserved_memory)
     }
 
+    /// Looks for a sharding network by sending a HelloFromNode message to all nodes in the config file
     pub fn look_for_sharding_network(ip: &str, port: &str, name: &str) {
         let config = get_nodes_config();
         let mut candidate_ip;
@@ -144,6 +147,7 @@ impl Shard {
         }
     }
 
+    /// Accepts incoming connections
     pub fn accept_connections(shared_shard: Arc<Mutex<Shard>>, ip: String, accepting_port: String) {
         let port = match accepting_port.parse::<u64>() {
             Ok(port) => port + 1000,
@@ -331,6 +335,7 @@ impl Shard {
         message.get_message_type() == MessageType::HelloFromNode
     }
 
+    /// Gets a response for the given message
     fn get_response_message(&mut self, message: Message) -> Option<String> {
         match message.get_message_type() {
             MessageType::InitConnection => self.handle_init_connection_message(message),
@@ -347,6 +352,8 @@ impl Shard {
         }
     }
 
+    /// Handles an InitConnection message
+    /// This message is used to establish a connection with the router
     fn handle_init_connection_message(&mut self, message: Message) -> Option<String> {
         let router_info = message.get_data().node_info?;
         self.router_info = Arc::new(Mutex::new(Some(router_info.clone())));
@@ -354,11 +361,15 @@ impl Shard {
         Some(response_string)
     }
 
+    /// Handles a MemoryUpdate message
+    /// This message is used to update the memory of the shard
     fn handle_memory_update_message(&mut self) -> Option<String> {
         let response_string = self.get_memory_update_message()?;
         Some(response_string)
     }
 
+    /// Handles a GetRouter message
+    /// This message is used to get the router info
     fn handle_get_router_message(&mut self) -> Option<String> {
         let self_clone = self.clone();
         let router_info: Option<NodeInfo> = {
@@ -381,6 +392,8 @@ impl Shard {
         }
     }
 
+    /// Gets all tables from the shard
+    /// It will return a message of type Agreed with the memory percentage and the tables max id, parsed to String.
     fn get_agreed_connection(&self) -> Option<String> {
         let memory_manager = match self.memory_manager.as_ref().try_lock() {
             Ok(memory_manager) => memory_manager,
@@ -402,6 +415,8 @@ impl Shard {
         Some(response_message.to_string())
     }
 
+    /// Gets a MemoryUpdate message, parsed to String
+    /// It will include the memory percentage and the tables max id
     fn get_memory_update_message(&mut self) -> Option<String> {
         match self.update() {
             Ok(()) => {}
@@ -429,6 +444,7 @@ impl Shard {
         Some(response_message.to_string())
     }
 
+    /// Updates the memoryManager and tables_max_id
     fn update(&mut self) -> Result<(), io::Error> {
         self.set_max_ids();
         match self.memory_manager.as_ref().try_lock() {

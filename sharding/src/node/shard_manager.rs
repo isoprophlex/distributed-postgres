@@ -8,6 +8,7 @@ use std::{
 
 use super::tables_id_info::TablesIdInfo;
 
+/// Struct that manages the shards' memory and max ids in each table.
 #[derive(Debug, Clone)]
 pub(crate) struct ShardManager {
     shards: Arc<Mutex<BinaryHeap<ShardManagerObject>>>,
@@ -15,6 +16,8 @@ pub(crate) struct ShardManager {
 }
 
 impl ShardManager {
+
+    /// Creates a new ShardManager.
     pub fn new() -> Self {
         ShardManager {
             shards: Arc::new(Mutex::new(BinaryHeap::new())),
@@ -22,6 +25,7 @@ impl ShardManager {
         }
     }
 
+    /// Adds a shard to the heap.
     pub fn add_shard(&mut self, value: f64, shard_id: String) {
         let object = ShardManagerObject {
             key: value,
@@ -37,6 +41,7 @@ impl ShardManager {
         shards.push(object);
     }
 
+    /// Returns the top shard in the heap.
     pub fn peek(&self) -> Option<String> {
         let shards = match self.shards.lock() {
             Ok(shards) => shards,
@@ -52,6 +57,7 @@ impl ShardManager {
         }
     }
 
+    /// Returns the number of shards in the heap.
     pub fn count(&self) -> usize {
         let shards = match self.shards.lock() {
             Ok(shards) => shards,
@@ -73,6 +79,8 @@ impl ShardManager {
         self.add_shard(memory, shard_id);
     }
 
+    /// Pops the top shard from the heap.
+    /// If the heap is empty, it will return None.
     fn pop(&mut self) -> Option<String> {
         let mut shards = match self.shards.lock() {
             Ok(shards) => shards,
@@ -124,6 +132,8 @@ impl ShardManager {
         *shards = new_shards;
     }
 
+    /// Saves the max ids for a shard.
+    /// This function is called when the router receives a message from a shard with the max ids for each table.
     pub fn save_max_ids_for_shard(&mut self, shard_id: String, tables_id_info: TablesIdInfo) {
         let shard_max_ids = match self.shard_max_ids.lock() {
             Ok(shard_max_ids) => shard_max_ids,
@@ -136,6 +146,7 @@ impl ShardManager {
         shard_max_ids.insert(shard_id, tables_id_info);
     }
 
+    /// Returns the names of the tables existing in all shards.
     pub fn get_table_names_for_all(&self) -> Vec<String> {
         let shard_max_ids = match self.shard_max_ids.lock() {
             Ok(shard_max_ids) => shard_max_ids,
@@ -155,6 +166,7 @@ impl ShardManager {
         table_names
     }
 
+    /// Returns the max ids for a shard and table.
     pub fn get_max_ids_for_shard_table(&self, shard_id: &str, table: &str) -> Option<i64> {
         let shard_max_ids = match self.shard_max_ids.lock() {
             Ok(shard_max_ids) => shard_max_ids,
@@ -180,6 +192,7 @@ struct ShardManagerObject {
     value: String,
 }
 
+/// Implementing Ord for ShardManagerObject
 impl Ord for ShardManagerObject {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.partial_cmp(other) {
@@ -189,18 +202,21 @@ impl Ord for ShardManagerObject {
     }
 }
 
+/// Implementing PartialOrd for ShardManagerObject
 impl PartialOrd for ShardManagerObject {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.key.partial_cmp(&other.key)
     }
 }
 
+/// Implementing PartialEq for ShardManagerObject
 impl PartialEq for ShardManagerObject {
     fn eq(&self, other: &Self) -> bool {
         self.key == other.key
     }
 }
 
+/// Implementing Eq for ShardManagerObject
 impl Eq for ShardManagerObject {}
 
 #[cfg(test)]

@@ -22,8 +22,10 @@ pub trait NodeRole {
     /// Sends a query to the shard group
     fn send_query(&mut self, query: &str) -> Option<String>;
 
+    /// Stops the node instance
     fn stop(&mut self);
 
+    /// Returns all tables currently existing in the node's PostgreSQL cluster
     fn get_all_tables_from_self(&mut self, check_if_empty: bool) -> Vec<String> {
         let query = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
         let Some(rows) = self.get_rows_for_query(query) else {
@@ -47,6 +49,7 @@ pub trait NodeRole {
         non_empty_tables
     }
 
+    /// Query the node's PostgreSQL cluster and return the obtained rows
     fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
         // SQLSTATE Code Error for "relation does not exist"
         const UNDEFINED_TABLE_CODE: &str = "42P01";
@@ -83,6 +86,7 @@ pub trait NodeRole {
     }
 }
 
+/// NodeType enum
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone)]
 pub enum NodeType {
@@ -93,6 +97,7 @@ pub enum NodeType {
 
 // MARK: Node Singleton
 
+/// NodeInstance struct. It includes: instance, ip, port, and node_type.
 pub struct NodeInstance {
     pub instance: Option<Box<dyn NodeRole>>,
     pub ip: String,
@@ -100,7 +105,9 @@ pub struct NodeInstance {
     pub node_type: NodeType,
 }
 
+/// Implementation of NodeInstance
 impl NodeInstance {
+    /// Creates a new NodeInstance.
     fn new(instance: Box<dyn NodeRole>, ip: String, port: String, node_type: NodeType) -> Self {
         NodeInstance {
             instance: Some(instance),
@@ -113,8 +120,10 @@ impl NodeInstance {
 
 // MARK: Node Instance
 
+/// Node Instance. It holds the current node instance.
 pub static mut NODE_INSTANCE: Option<NodeInstance> = None;
 
+/// Returns the current node instance.
 pub fn get_node_instance() -> &'static mut NodeInstance {
     unsafe {
         NODE_INSTANCE
@@ -123,6 +132,7 @@ pub fn get_node_instance() -> &'static mut NodeInstance {
     }
 }
 
+/// Returns the current node role.
 pub fn get_node_role() -> &'static mut dyn NodeRole {
     unsafe {
         match NODE_INSTANCE.as_mut() {
@@ -175,6 +185,7 @@ pub extern "C" fn InitNodeInstance(node_type: NodeType, port: *const i8) {
 
 // MARK: Raft
 
+/// Runs the Raft instance in a separate task
 fn run_raft(ip: String, port: String, transmitter: Sender<bool>, receiver: Receiver<bool>) {
     thread::spawn(move || {
         let rt = match Runtime::new() {
@@ -194,6 +205,7 @@ fn run_raft(ip: String, port: String, transmitter: Sender<bool>, receiver: Recei
     });
 }
 
+/// Creates a new Raft instance
 async fn new_raft_instance(
     ip: String,
     port: String,
@@ -234,6 +246,7 @@ async fn new_raft_instance(
 
 // MARK: Node Role
 
+/// Listens for changes in the node role from Raft
 fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
     thread::spawn(move || loop {
         match receiver.recv() {
@@ -259,6 +272,7 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
     });
 }
 
+/// Changes the node role if needed.
 fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<String, Error> {
     if new_role == NodeType::Client {
         eprintln!("NodeRole cannot be changed to Client, it is not a valid role");
@@ -304,12 +318,14 @@ fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<String, 
     Ok(format!("Role changing finished successfully. Node is now {new_role:?}").to_string())
 }
 
+/// Confirms the role change to Raft
 fn confirm_role_change(transmitter: Sender<bool>) {
     transmitter
         .send(true)
         .expect("Error sending true to raft transmitter");
 }
 
+/// Initializes a new node instance based on the node type
 fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
     // Initialize node based on node type
     match node_type {
@@ -319,6 +335,7 @@ fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
     }
 }
 
+/// Initializes a new router
 fn init_router(ip: &str, port: &str) {
     // sleep for 5 seconds to allow the stream to be ready to read
     //thread::sleep(std::time::Duration::from_secs(5));
@@ -348,6 +365,7 @@ fn init_router(ip: &str, port: &str) {
     });
 }
 
+/// Initializes a new shard
 fn init_shard(ip: &str, port: &str) {
     let shard = Shard::new(ip, port);
 
@@ -368,6 +386,7 @@ fn init_shard(ip: &str, port: &str) {
     });
 }
 
+/// Initializes a new client
 fn init_client(ip: &str, port: &str) {
     unsafe {
         NODE_INSTANCE = Some(NodeInstance::new(

@@ -15,6 +15,7 @@ pub struct MessageData {
 impl MessageData {
     // - Constructors -
 
+    /// Creates a new MessageData with a payload and max_ids
     pub fn new_payload(payload: f64, max_ids: TablesIdInfo) -> Self {
         MessageData {
             payload: Some(payload),
@@ -24,6 +25,7 @@ impl MessageData {
         }
     }
 
+    /// Creates a new MessageData with a node_info
     pub fn new_node_info(node_info: NodeInfo) -> Self {
         MessageData {
             payload: None,
@@ -33,6 +35,7 @@ impl MessageData {
         }
     }
 
+    /// Creates a new MessageData with a query and sender_info
     pub fn new_query(query: String, sender_info: Option<NodeInfo>) -> Self {
         MessageData {
             payload: None,
@@ -42,6 +45,7 @@ impl MessageData {
         }
     }
 
+    /// Creates a new MessageData with a query response
     pub fn new_query_response(query_response: String) -> Self {
         MessageData {
             payload: None,
@@ -51,6 +55,7 @@ impl MessageData {
         }
     }
 
+    /// Creates a new MessageData with no attributes
     pub fn new_none() -> Self {
         MessageData {
             payload: None,

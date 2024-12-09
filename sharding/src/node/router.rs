@@ -206,6 +206,8 @@ impl Router {
             }
         }
     }
+
+    /// Gets response message from the router, analyzing the message received.
     fn get_response_message(&mut self, message: &str) -> Option<String> {
         if message.is_empty() {
             return None;
@@ -232,6 +234,7 @@ impl Router {
         }
     }
 
+    /// Handles the Query message, sending the query to the shards (or it own backend, if alone) and returning the response.
     fn handle_query_message(&mut self, message: &Message) -> Option<String> {
         let query = match message.get_data().query {
             Some(query) => query,
@@ -253,6 +256,7 @@ impl Router {
         Some(response_message.to_string())
     }
 
+    /// Handles the GetRouter message, returning its own information.
     fn handle_get_router_message(&mut self) -> Option<String> {
         let self_clone = self.clone();
         let ip = self_clone.ip.clone().to_string();
@@ -264,6 +268,7 @@ impl Router {
         Some(response_message.to_string())
     }
 
+    /// Handles the HelloFromNode message, configuring the connection to the shard and redistributing the data if needed.
     fn handle_hello_from_node_message(&mut self, message: &Message) -> Option<String> {
         println!("Received HelloFromNode message");
 
@@ -288,6 +293,7 @@ impl Router {
         Some("OK".to_string())
     }
 
+    /// Duplicates the existing tables in the existing nodes into the brand new shard.
     fn duplicate_tables_into(&mut self, shard_id: &str) {
         let mut tables = self.get_all_tables_from_shards();
         tables.extend(self.get_all_tables_from_self(false));
@@ -304,6 +310,7 @@ impl Router {
         }
     }
 
+    /// Gets all existing tables' names from the nodes.
     fn get_all_tables_from_shards(&mut self) -> Vec<String> {
         self.shard_manager.get_table_names_for_all()
     }
@@ -346,6 +353,7 @@ impl Router {
         Some(router)
     }
 
+    /// Configures the connections to the shards specified in the configuration file.
     fn configure_connections(&mut self) {
         let config = get_nodes_config();
         for shard in config.nodes {
@@ -486,6 +494,7 @@ impl Router {
         }
     }
 
+    /// Handles the Agreed message from the shard, saving the shard in the `ShardManager` with the given memory size and shard id.
     fn handle_agreed_message(&mut self, message: &Message, node_port: &str) -> bool {
         println!("{color_bright_green}Shard {node_port} accepted the connection{style_reset}");
 
@@ -512,6 +521,7 @@ impl Router {
         true
     }
 
+    /// Handles the MemoryUpdate message from the shard, updating the shard in the `ShardManager` with the given memory size and shard id.
     fn handle_memory_update_message(&mut self, message: &Message, node_port: &str) -> bool {
         let payload = match message.get_data().payload {
             Some(payload) => payload,
@@ -616,6 +626,8 @@ impl Router {
         }
     }
 
+    /// Function that allows the router to get the specific shard that owns a given ID, and format the query with the new ID to be sent to the shard. 
+    /// This is needed because the router abstracts the client from the sharding implementation, joining all the shards' data into a single table with a unique ID, using an offset system to avoid duplicated IDs. So, when a query with a specific ID is received, the router needs to find the specific shard that owns that ID and format the query with the new ID to be sent to the shard.
     fn get_specific_shard_with(&mut self, mut id: i64, query: &str) -> (Vec<String>, bool, String) {
         let shards = match self.shards.lock() {
             Ok(shards) => shards,
@@ -663,6 +675,10 @@ impl Router {
         )
     }
 
+    /// Formats the response from the shards, unified in a single response with no duplicated IDs.
+    /// If the query is a SELECT query, the response will be formatted with the offset system.
+    /// If the query is not a SELECT query, the response will be formatted without the offset system.
+    /// Returns the formatted response as a String.
     fn format_response(
         &self,
         shards_responses: IndexMap<String, Vec<Row>>,
@@ -871,6 +887,8 @@ impl NodeRole for Router {
 
 // MARK: - Communication with shards
 impl Router {
+
+    /// Gets the stream for the shard with the given shard id.
     fn get_stream(&self, shard_id: &str) -> Option<Arc<Mutex<TcpStream>>> {
         let Ok(comm_channels) = self.comm_channels.read() else {
             eprintln!("Failed to get comm channels");
@@ -885,6 +903,7 @@ impl Router {
         Some(shard_comm_channel.stream.clone())
     }
 
+    /// Initializes the message exchange with the shard, sending the message and reading the response.
     fn init_message_exchange(
         &mut self,
         message: &Message,
@@ -936,6 +955,7 @@ impl Router {
         self.init_message_exchange(&message, &mut writable_stream, shard_id);
     }
 
+    /// Sends a query to the shard with the given shard id, returning the rows from the query.
     fn send_query_to_shard(
         &mut self,
         shard_id: &str,
@@ -984,6 +1004,7 @@ impl Router {
         Err((SendQueryError::Other("Shard not found".to_string()), None))
     }
 
+    /// Sends a query to the router's backend, returning the rows from the query.
     fn send_query_to_backend(&mut self, query: &str) -> Option<String> {
         println!("{color_bright_green}Sending query to Self: {query}{style_reset}");
         let rows = self.get_rows_for_query(query)?;
@@ -991,6 +1012,7 @@ impl Router {
         Some(response)
     }
 
+    /// Deletes the shard with the given shard id from the router's shards.
     fn delete_shard(&mut self, shard_id: &str) {
         println!("Deleting shard {shard_id}");
         let mut shard_manager = self.shard_manager.as_ref().clone();
@@ -1009,12 +1031,14 @@ impl Router {
 
 // MARK: - Data Redistribution
 impl Router {
+    /// Checks if the backend has data.
     fn backend_has_data(&mut self) -> bool {
         let query = "SELECT * FROM information_schema.tables WHERE table_schema = 'public'";
         let rows = self.get_rows_for_query(query);
         rows.is_some()
     }
 
+    /// Redistributes the data from the router's backend to the shards.
     fn redistribute_data(&mut self) {
         if !self.backend_has_data() {
             eprintln!("No data found in backend. Skipping redistribution.");
@@ -1083,6 +1107,7 @@ impl Router {
         self.empty_tables(&tables);
     }
 
+    /// Creates a CREATE query for the specified table, getting the column names and data types from the information_schema.columns table.
     fn generate_create_table_query(&mut self, table: &str, shard_id: Option<String>) -> String {
         // Dynamically generate CREATE TABLE statement for the specified table, getting the column names and data types from the information_schema.columns table
         let query = format!(
@@ -1134,6 +1159,7 @@ impl Router {
         )
     }
 
+    /// Converts a row to an INSERT query.
     fn row_to_insert_query(&self, row: &Row, table: &str) -> String {
         let columns = row.columns();
         let column_names: Vec<String> = columns
@@ -1180,6 +1206,7 @@ impl Router {
         query
     }
 
+    /// Empties the tables with the given names from the router's backend.
     fn empty_tables(&mut self, tables: &[String]) {
         for table in tables {
             // Check if table has data before trying to delete all
