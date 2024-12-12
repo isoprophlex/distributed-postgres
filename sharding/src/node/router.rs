@@ -286,10 +286,6 @@ impl Router {
             name: node_info.name,
         });
 
-        self.duplicate_tables_into(&node_info.port);
-        if self.shard_manager.count() == 1 {
-            self.redistribute_data();
-        }
         Some("OK".to_string())
     }
 
