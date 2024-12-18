@@ -338,8 +338,6 @@ fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
 
 /// Initializes a new router
 fn init_router(ip: &str, port: &str) {
-    // sleep for 5 seconds to allow the stream to be ready to read
-    //thread::sleep(std::time::Duration::from_secs(5));
 
     let router = match Router::new(ip, port) {
         Some(router) => router,
@@ -362,7 +360,6 @@ fn init_router(ip: &str, port: &str) {
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
         Router::wait_for_incoming_connections(&shared_router, ip_clone, port_clone);
-        println!("Router comes back from wait_for_incoming_connections");
     });
 }
 
