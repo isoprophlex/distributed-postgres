@@ -1,7 +1,5 @@
-use libc::statvfs;
-use std::ffi::CString;
 use std::io;
-use sysinfo::System;
+use sysinfo::Disks;
 
 /// This struct represents the Memory Manager in the distributed system.
 /// It will manage the memory of the node and will be used to determine if the node should accept new requests.
@@ -46,43 +44,35 @@ impl MemoryManager {
             return Some(0.0);
         }
 
-        // Create a System object
-        let mut sys = System::new_all();
+        // Create a Disk object
+        let disks = Disks::new_with_refreshed_list();
 
-        // Refresh system data
-        sys.refresh_all();
+        let mut total_space: u64 = 0;
+        let mut available_space: u64 = 0;
 
-        // Get the root directory information
-        let path = match CString::new("/") {
-            Ok(path) => path,
-            Err(_) => return None,
-        };
-        let mut stat: statvfs = unsafe { std::mem::zeroed() };
-
-        if unsafe { statvfs(path.as_ptr(), &mut stat) } == 0 {
-            let total_space = ((stat.f_blocks as u64) * stat.f_frsize) / 1024;
-            let available_space = ((stat.f_bavail as u64) * stat.f_frsize) / 1024;
-
-            // if percentage is greater than 1, it means that the total of space used exceeds the threshold.
-            // If so, return 0
-            let total = total_space as f64;
-            let threshold_size = total * (unavailable_memory_perc / 100.0);
-
-            if threshold_size > available_space as f64 {
-                return Some(0.0);
-            }
-
-            let usable_available_space = available_space as f64 - threshold_size;
-            let usable_total_space = total - threshold_size / 100.0;
-
-            let percentage = usable_available_space / usable_total_space * 100.0;
-            if percentage > 100.0 {
-                return Some(0.0);
-            }
-            Some(percentage)
-        } else {
-            None
+        // Get the total and available space of the disk
+        for disk in &disks {
+            total_space += disk.total_space();
+            available_space += disk.available_space();
         }
+
+        // if percentage is greater than 1, it means that the total of space used exceeds the threshold.
+        // If so, return 0
+        let total = total_space as f64;
+        let threshold_size = total * (unavailable_memory_perc / 100.0);
+
+        if threshold_size > available_space as f64 {
+            return Some(0.0);
+        }
+
+        let usable_available_space = available_space as f64 - threshold_size;
+        let usable_total_space = total - threshold_size / 100.0;
+
+        let percentage = usable_available_space / usable_total_space * 100.0;
+        if percentage > 100.0 {
+            return Some(0.0);
+        }
+        Some(percentage)
     }
 }
 

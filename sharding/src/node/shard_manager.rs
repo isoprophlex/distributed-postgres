@@ -52,19 +52,6 @@ impl ShardManager {
         shards.peek().map(|object| object.value.clone())
     }
 
-    /// Returns the number of shards in the heap.
-    pub fn count(&self) -> usize {
-        let shards = match self.shards.lock() {
-            Ok(shards) => shards,
-            Err(_) => {
-                eprintln!("Failed to lock shards");
-                return 0;
-            }
-        };
-
-        shards.len()
-    }
-
     /// Updates the memory of a shard and reorders the shards based on the new memory.
     /// If the memory is higher than the current top shard, it will become the new top shard.
     /// If the memory is lower than the current top shard, it will be placed in the correct position in the heap.
