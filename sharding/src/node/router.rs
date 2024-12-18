@@ -286,17 +286,20 @@ impl Router {
             name: node_info.name,
         });
 
+        self.try_duplicate_tables_into(&node_info.port);
         Some("OK".to_string())
     }
 
     /// Duplicates the existing tables in the existing nodes into the brand new shard.
-    fn duplicate_tables_into(&mut self, shard_id: &str) {
+    fn try_duplicate_tables_into(&mut self, shard_id: &str) {
         let mut tables = self.get_all_tables_from_shards();
         tables.extend(self.get_all_tables_from_self(false));
 
         // delete duplicated tables
         tables.sort();
         tables.dedup();
+
+        println!("Tables to be duplicated: {tables:?}");
 
         for table in tables {
             let create_query = self.generate_create_table_query(&table, None);
@@ -836,7 +839,7 @@ impl NodeRole for Router {
                 }
                 Err(_) => {
                     // The thread panicked
-                    println!("Thread panicked");
+                    println!("Thread ended");
                 }
             };
         }
@@ -979,7 +982,7 @@ impl Router {
             }
         };
 
-        println!("Sending query to shard {shard_id}: {query}");
+        println!("{color_bright_green}Sending query to shard {shard_id}: {query}{style_reset}");
         if let Some(shard) = shards.get_mut(shard_id) {
             let rows = match shard.query(query, &[]) {
                 Ok(rows) => rows,
@@ -1065,10 +1068,16 @@ impl Router {
         // drop shard lock
         drop(shards);
 
-        let tables = self.get_all_tables_from_self(true);
+        let mut tables = self.get_all_tables_from_self(true);
+
+        tables.sort();
+        tables.dedup();
+
+        println!("Tables to be redistributed: {tables:?}");
 
         // Prepare data structures
         let mut starting_queries = Vec::new();
+        let mut insert_queries = Vec::new();
 
         for table in &tables {
             // Generate CREATE TABLE query
@@ -1077,7 +1086,7 @@ impl Router {
                 starting_queries.push(create_query);
             }
 
-            let mut insert_queries = Vec::new();
+            
             // Fetch all rows from the table
             if let Some(rows) = self.get_rows_for_query(&format!("SELECT * FROM {}", table)) {
                 // Convert each row to an INSERT query and store it
@@ -1086,27 +1095,28 @@ impl Router {
                     insert_queries.push(insert_query);
                 }
             }
+        }
 
-            // Send queries to appropriate shards
-            for insert_query in &insert_queries {
-                let (shards, _, formatted_query) = self.get_data_needed_from(insert_query);
+        // Send starting queries to appropriate shards
+        for starting_query in &starting_queries {
+            let (shards, _, formatted_query) = self.get_data_needed_from(starting_query);
 
-                for shard_id in shards {
-                    // Send `starting_query` if it hasn't been sent for this table
-                    let table_starting_query =
-                        match starting_queries.iter().find(|q| q.contains(table)) {
-                            Some(q) => q,
-                            None => {
-                                continue;
-                            }
-                        };
-                    _ = self.send_query_to_shard(&shard_id, table_starting_query, false);
-
-                    // Send the actual insert query
-                    _ = self.send_query_to_shard(&shard_id, &formatted_query, true);
-                }
+            for shard_id in shards {
+                // Send `starting_query` if it hasn't been sent for this table
+                _ = self.send_query_to_shard(&shard_id, &formatted_query, false);
             }
         }
+
+        // Send queries to appropriate shards
+        for insert_query in &insert_queries {
+            let (shards, _, formatted_query) = self.get_data_needed_from(insert_query);
+
+            for shard_id in shards {
+                // Send the actual insert query
+                _ = self.send_query_to_shard(&shard_id, &formatted_query, true);
+            }
+        }
+
         // Drop all tables from router backend
         self.empty_tables(&tables);
     }
@@ -1203,9 +1213,6 @@ impl Router {
             column_names.join(", "),
             result.join(", ")
         );
-
-        println!("{color_bright_green}Query: {query:?}{style_reset}");
-
         query
     }
 
