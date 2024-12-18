@@ -48,6 +48,7 @@ impl fmt::Debug for Message {
 impl Message {
     // --- Constructors ---
 
+    /// Creates a new Message with the InitConnection type
     pub fn new_init_connection(node_info: NodeInfo) -> Self {
         Message {
             message_type: MessageType::InitConnection,
@@ -58,6 +59,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the AskMemoryUpdate type
     pub fn new_ask_memory_update() -> Self {
         Message {
             message_type: MessageType::AskMemoryUpdate,
@@ -68,6 +70,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the MemoryUpdate type
     pub fn new_memory_update(payload: f64, max_ids: TablesIdInfo) -> Self {
         Message {
             message_type: MessageType::MemoryUpdate,
@@ -78,6 +81,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the Agreed type
     pub fn new_agreed(memory_percentage: f64, max_ids: TablesIdInfo) -> Self {
         Message {
             message_type: MessageType::Agreed,
@@ -88,6 +92,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the Denied type
     pub fn new_denied() -> Self {
         Message {
             message_type: MessageType::Denied,
@@ -98,6 +103,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the GetRouter type
     pub fn new_get_router() -> Self {
         Message {
             message_type: MessageType::GetRouter,
@@ -108,6 +114,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the RouterId type
     pub fn new_router_id(node_info: NodeInfo) -> Self {
         Message {
             message_type: MessageType::RouterId,
@@ -118,6 +125,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the HelloFromNode type
     pub fn new_hello_from_node(node_info: NodeInfo) -> Self {
         Message {
             message_type: MessageType::HelloFromNode,
@@ -128,6 +136,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the NoRouterData type
     pub fn new_no_router_data() -> Self {
         Message {
             message_type: MessageType::NoRouterData,
@@ -138,6 +147,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the Query type
     pub fn new_query(sender_info: Option<NodeInfo>, query: String) -> Self {
         Message {
             message_type: MessageType::Query,
@@ -148,6 +158,7 @@ impl Message {
         }
     }
 
+    /// Creates a new Message with the QueryResponse type
     pub fn new_query_response(query_response: String) -> Self {
         Message {
             message_type: MessageType::QueryResponse,
@@ -160,6 +171,7 @@ impl Message {
 
     // --- Method to get the data ---
 
+    /// Get the data from the message
     pub fn get_data(&self) -> MessageData {
         match self.message_type {
             MessageType::InitConnection | MessageType::RouterId | MessageType::HelloFromNode => {
@@ -175,11 +187,6 @@ impl Message {
                     None => TablesIdInfo::new(),
                 };
                 if let Some(payload) = self.payload {
-                    println!(
-                        "Payload: {}, Max Ids: {}",
-                        payload,
-                        max_ids.convert_to_string()
-                    );
                     MessageData::new_payload(payload, max_ids)
                 } else {
                     MessageData::new_none()
@@ -263,7 +270,7 @@ impl Message {
         // Query Data
         result.push(' ');
         if let Some(query) = &self.query_data {
-            result.push_str(&query);
+            result.push_str(query);
         } else {
             result.push_str("None");
         }
@@ -324,10 +331,7 @@ impl Message {
                     query.push_str(part);
                     query.push(' ');
                 }
-                match query.split(';').next() {
-                    Some(query) => Some(query.to_string()),
-                    None => None,
-                }
+                query.split(';').next().map(|query| query.to_string())
             }
             None => None,
         };
@@ -594,7 +598,7 @@ mod tests {
             "INIT_CONNECTION 0.5 departments:5,employees:3 None None\n",
         ];
 
-        assert!(options.contains(&&message.to_string().as_str()));
+        assert!(options.contains(&message.to_string().as_str()));
     }
 
     #[test]

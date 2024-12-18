@@ -6,9 +6,11 @@ use super::tables_id_info::TablesIdInfo;
 use crate::node::messages::node_info::find_name_for_node;
 use crate::utils::common::{connect_to_node, ConvertToString};
 use crate::utils::node_config::{get_memory_config, get_nodes_config};
+use crate::utils::queries::query_affects_memory_state;
 use indexmap::IndexMap;
 use inline_colorization::*;
 use postgres::Client as PostgresClient;
+use std::fmt;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
@@ -31,7 +33,7 @@ pub struct Shard {
     pub stopped: Arc<Mutex<bool>>,
 }
 
-use std::fmt;
+/// Implementation of Debug for Shard
 impl fmt::Debug for Shard {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Shard")
@@ -47,23 +49,14 @@ impl Shard {
     /// Creates a new Shard node in the given port.
     #[must_use]
     pub fn new(ip: &str, port: &str) -> Self {
-        println!("Creating a new Shard node in port: {port}");
-        println!("Connecting to the database in port: {port}");
-
         let backend: PostgresClient = match connect_to_node(ip, port) {
             Ok(backend) => backend,
             Err(e) => {
-                eprintln!("Failed to connect to the database: {e}");
-                panic!("Failed to connect to the database");
+                panic!("Failed to connect to the database: {e}");
             }
         };
 
         let memory_manager = Self::initialize_memory_manager();
-
-        println!(
-            "{color_blue}[Shard] Available Memory: {:?} %{style_reset}",
-            memory_manager.available_memory_perc
-        );
 
         let name = match find_name_for_node(ip.to_string(), port.to_string()) {
             Some(name) => name,
@@ -86,20 +79,23 @@ impl Shard {
 
         let _ = shard.update();
 
-        println!("{color_bright_green}Shard created successfully. Shard: {shard:?}{style_reset}");
+        println!(
+            "{color_bright_green}Shard created successfully. Shard: {}, {}:{} {style_reset}",
+            shard.name, ip, port
+        );
 
         shard
     }
 
+    /// Initializes the memory manager for the shard
     fn initialize_memory_manager() -> MemoryManager {
         let config = get_memory_config();
         let reserved_memory = config.unavailable_memory_perc;
         MemoryManager::new(reserved_memory)
     }
 
+    /// Looks for a sharding network by sending a HelloFromNode message to all nodes in the config file
     pub fn look_for_sharding_network(ip: &str, port: &str, name: &str) {
-        println!("Checking if there's a sharding network ...");
-
         let config = get_nodes_config();
         let mut candidate_ip;
         let mut candidate_port;
@@ -123,13 +119,7 @@ impl Shard {
 
             let mut candidate_stream =
                 match TcpStream::connect(format!("{}:{}", candidate_ip, candidate_port)) {
-                    Ok(stream) => {
-                        println!(
-                        "{color_bright_green}Health connection established with {}:{}{style_reset}",
-                        candidate_ip, candidate_port
-                    );
-                        stream
-                    }
+                    Ok(stream) => stream,
                     Err(_) => {
                         continue;
                     }
@@ -140,7 +130,11 @@ impl Shard {
                 port: port.to_string(),
                 name: name.to_string(),
             });
-            println!("{color_bright_green}Sending HelloFromNode message to {candidate_ip}:{candidate_port}{style_reset}");
+
+            println!(
+                "{color_bright_green}Sending HelloFromNode to {}:{}{style_reset}",
+                candidate_ip, candidate_port
+            );
 
             match candidate_stream.write_all(hello_message.to_string().as_bytes()) {
                 Ok(_) => {}
@@ -154,6 +148,7 @@ impl Shard {
         }
     }
 
+    /// Accepts incoming connections
     pub fn accept_connections(shared_shard: Arc<Mutex<Shard>>, ip: String, accepting_port: String) {
         let port = match accepting_port.parse::<u64>() {
             Ok(port) => port + 1000,
@@ -199,7 +194,6 @@ impl Shard {
             };
 
             if *must_stop {
-                println!("{color_red}STOPPED ACCEPT CONNECTIONS{style_reset}");
                 drop(listener);
 
                 handles.into_iter().for_each(|handle| _ = handle.join());
@@ -226,9 +220,7 @@ impl Shard {
                     let stopped_clone = stopped.clone();
 
                     let _handle = thread::spawn(move || {
-                        println!("Inside thread spawn on accept_connections");
                         Shard::listen(&shard_clone, &stream_clone, stopped_clone);
-                        println!("Listening thread finished");
                     });
                     handles.push(_handle);
                 }
@@ -245,8 +237,6 @@ impl Shard {
         tcp_stream: &Arc<Mutex<TcpStream>>,
         stopped: Arc<Mutex<bool>>,
     ) {
-        println!("Listening for incoming messages");
-
         let mut stream = match tcp_stream.lock() {
             Ok(stream) => stream,
             Err(_) => {
@@ -264,7 +254,6 @@ impl Shard {
         }
 
         loop {
-            // println!("Inside listen loop");
             let must_stop = match stopped.lock() {
                 Ok(stopped) => stopped,
                 Err(_) => {
@@ -274,7 +263,6 @@ impl Shard {
             };
 
             if *must_stop {
-                println!("{color_red}STOPPED LISTENING{style_reset}");
                 drop(stream);
                 return;
             }
@@ -293,7 +281,6 @@ impl Shard {
                 }
             }
 
-            // println!("Before stream read");
             match stream.read(&mut buffer) {
                 Ok(chars) => {
                     if chars == 0 {
@@ -328,11 +315,6 @@ impl Shard {
                     }
 
                     if let Some(response) = shard.get_response_message(message) {
-                        println!(
-                            "{color_bright_green}Received message: {message_string}{style_reset}"
-                        );
-                        println!("{color_bright_green}Sending response: {response}{style_reset}");
-
                         match stream.write_all(response.as_bytes()) {
                             Ok(_) => {}
                             Err(e) => {
@@ -354,6 +336,7 @@ impl Shard {
         message.get_message_type() == MessageType::HelloFromNode
     }
 
+    /// Gets a response for the given message
     fn get_response_message(&mut self, message: Message) -> Option<String> {
         match message.get_message_type() {
             MessageType::InitConnection => self.handle_init_connection_message(message),
@@ -370,20 +353,24 @@ impl Shard {
         }
     }
 
+    /// Handles an InitConnection message
+    /// This message is used to establish a connection with the router
     fn handle_init_connection_message(&mut self, message: Message) -> Option<String> {
         let router_info = message.get_data().node_info?;
         self.router_info = Arc::new(Mutex::new(Some(router_info.clone())));
-        println!("{color_bright_green}Received an InitConnection message{style_reset}");
         let response_string = self.get_agreed_connection()?;
         Some(response_string)
     }
 
+    /// Handles a MemoryUpdate message
+    /// This message is used to update the memory of the shard
     fn handle_memory_update_message(&mut self) -> Option<String> {
-        println!("{color_bright_green}Received an AskMemoryUpdate message{style_reset}");
         let response_string = self.get_memory_update_message()?;
         Some(response_string)
     }
 
+    /// Handles a GetRouter message
+    /// This message is used to get the router info
     fn handle_get_router_message(&mut self) -> Option<String> {
         let self_clone = self.clone();
         let router_info: Option<NodeInfo> = {
@@ -406,6 +393,8 @@ impl Shard {
         }
     }
 
+    /// Gets all tables from the shard
+    /// It will return a message of type Agreed with the memory percentage and the tables max id, parsed to String.
     fn get_agreed_connection(&self) -> Option<String> {
         let memory_manager = match self.memory_manager.as_ref().try_lock() {
             Ok(memory_manager) => memory_manager,
@@ -427,11 +416,11 @@ impl Shard {
         Some(response_message.to_string())
     }
 
+    /// Gets a MemoryUpdate message, parsed to String
+    /// It will include the memory percentage and the tables max id
     fn get_memory_update_message(&mut self) -> Option<String> {
         match self.update() {
-            Ok(()) => {
-                println!("Memory updated successfully");
-            }
+            Ok(()) => {}
             Err(e) => {
                 eprintln!("Failed to update memory: {e:?}");
             }
@@ -456,16 +445,17 @@ impl Shard {
         Some(response_message.to_string())
     }
 
+    /// Updates the memoryManager and tables_max_id
     fn update(&mut self) -> Result<(), io::Error> {
         self.set_max_ids();
         match self.memory_manager.as_ref().try_lock() {
             Ok(mut memory_manager) => memory_manager.update(),
             Err(_) => {
                 eprintln!("Failed to get memory manager");
-                return Err(io::Error::new(
+                Err(io::Error::new(
                     io::ErrorKind::Other,
                     "Failed to get memory manager",
-                ));
+                ))
             }
         }
     }
@@ -479,7 +469,7 @@ impl Shard {
                 let max_id: i32 = if let Ok(id) = rows[0].try_get(0) {
                     id
                 } else {
-                    eprintln!("Failed to get max id for table: {table}. Table might be empty",);
+                    // Table is empty
                     0
                 };
                 let mut tables_max_id = match self.tables_max_id.as_ref().try_lock() {
@@ -509,23 +499,22 @@ impl NodeRole for Shard {
             return None;
         }
 
-        println!("{color_bright_green}Sending query to the shard database: ({query}){style_reset}");
         let rows = self.get_rows_for_query(query)?;
-        let _ = self.update(); // Updates memory and tables_max_id
+        if query_affects_memory_state(query) {
+            let _ = self.update(); // Updates memory and tables_max_id
+        }
+
         Some(rows.convert_to_string())
     }
 
     fn stop(&mut self) {
-        println!("{color_red}Stopping shard{style_reset}");
         match self.stopped.lock() {
             Ok(mut stopped) => {
-                println!("{color_red}Setting stopped to true{style_reset}");
                 *stopped = true;
             }
             Err(_) => {
                 eprintln!("Failed to stop router");
             }
         }
-        println!("{color_red}Shard stopped{style_reset}");
     }
 }

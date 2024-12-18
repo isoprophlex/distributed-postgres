@@ -2,7 +2,7 @@
 
 use core::panic;
 use postgres::{Client, NoTls};
-use sharding::node::node::{get_node_role, InitNodeInstance, NodeRole, NodeType};
+use sharding::node::node::NodeRole;
 use std::{
     fs,
     io::Write,
@@ -97,7 +97,6 @@ mod integration_test {
         let port_clone = "5433".to_string();
         let _handle = thread::spawn(move || {
             Shard::accept_connections(shared_shard, ip_clone, port_clone);
-            println!("Shard comes back from accept_connections");
         });
 
         thread::sleep(std::time::Duration::from_secs(15));
@@ -153,7 +152,6 @@ mod integration_test {
         let port_clone = "5433".to_string();
         let _handle = thread::spawn(move || {
             Shard::accept_connections(shared_shard, ip_clone, port_clone);
-            println!("Shard comes back from accept_connections");
         });
 
         thread::sleep(std::time::Duration::from_secs(15));

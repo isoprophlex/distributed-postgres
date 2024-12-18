@@ -4,6 +4,7 @@ use crate::node::client::Client;
 use crate::utils::node_config::get_nodes_config_raft;
 use crate::utils::node_config::INIT_HISTORY_FILE_PATH;
 use crate::utils::queries::print_rows;
+use inline_colorization::*;
 use postgres::Row;
 use std::ffi::CStr;
 use std::fmt::Error;
@@ -21,27 +22,35 @@ pub trait NodeRole {
     /// Sends a query to the shard group
     fn send_query(&mut self, query: &str) -> Option<String>;
 
+    /// Stops the node instance
     fn stop(&mut self);
 
+    /// Returns all tables currently existing in the node's PostgreSQL cluster
     fn get_all_tables_from_self(&mut self, check_if_empty: bool) -> Vec<String> {
-        // Select all tables that have data in them
-        let query = if check_if_empty {
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND EXISTS ( SELECT 1 FROM table_name LIMIT 1 )"
-        } else {
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
-        };
-
+        let query =
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
         let Some(rows) = self.get_rows_for_query(query) else {
             return Vec::new();
         };
-        let mut tables = Vec::new();
+
+        // If no need to check for emptiness, return all table names
+        if !check_if_empty {
+            return rows.into_iter().map(|row| row.get(0)).collect();
+        }
+
+        let mut non_empty_tables = Vec::new();
         for row in rows {
             let table_name: String = row.get(0);
-            tables.push(table_name);
+            let exists_query = format!("SELECT 1 FROM {} LIMIT 1", table_name);
+            if self.get_rows_for_query(&exists_query).is_some() {
+                non_empty_tables.push(table_name);
+            }
         }
-        tables
+
+        non_empty_tables
     }
 
+    /// Query the node's PostgreSQL cluster and return the obtained rows
     fn get_rows_for_query(&mut self, query: &str) -> Option<Vec<Row>> {
         // SQLSTATE Code Error for "relation does not exist"
         const UNDEFINED_TABLE_CODE: &str = "42P01";
@@ -78,6 +87,7 @@ pub trait NodeRole {
     }
 }
 
+/// NodeType enum
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone)]
 pub enum NodeType {
@@ -88,6 +98,7 @@ pub enum NodeType {
 
 // MARK: Node Singleton
 
+/// NodeInstance struct. It includes: instance, ip, port, and node_type.
 pub struct NodeInstance {
     pub instance: Option<Box<dyn NodeRole>>,
     pub ip: String,
@@ -95,7 +106,9 @@ pub struct NodeInstance {
     pub node_type: NodeType,
 }
 
+/// Implementation of NodeInstance
 impl NodeInstance {
+    /// Creates a new NodeInstance.
     fn new(instance: Box<dyn NodeRole>, ip: String, port: String, node_type: NodeType) -> Self {
         NodeInstance {
             instance: Some(instance),
@@ -108,8 +121,10 @@ impl NodeInstance {
 
 // MARK: Node Instance
 
+/// Node Instance. It holds the current node instance.
 pub static mut NODE_INSTANCE: Option<NodeInstance> = None;
 
+/// Returns the current node instance.
 pub fn get_node_instance() -> &'static mut NodeInstance {
     unsafe {
         NODE_INSTANCE
@@ -118,6 +133,7 @@ pub fn get_node_instance() -> &'static mut NodeInstance {
     }
 }
 
+/// Returns the current node role.
 pub fn get_node_role() -> &'static mut dyn NodeRole {
     unsafe {
         match NODE_INSTANCE.as_mut() {
@@ -152,10 +168,8 @@ pub extern "C" fn InitNodeInstance(node_type: NodeType, port: *const i8) {
                 panic!("Received an invalid UTF-8 string");
             }
         };
-        println!("found_port: {}", found_port);
     }
     let ip = "127.0.0.1";
-    println!("before init_shard ip: {}, port: {}", ip, found_port);
     new_node_instance(node_type.clone(), ip, &found_port);
 
     // If the node is a client, it does not need to run raft. Thus, it can return after initializing
@@ -172,6 +186,7 @@ pub extern "C" fn InitNodeInstance(node_type: NodeType, port: *const i8) {
 
 // MARK: Raft
 
+/// Runs the Raft instance in a separate task
 fn run_raft(ip: String, port: String, transmitter: Sender<bool>, receiver: Receiver<bool>) {
     thread::spawn(move || {
         let rt = match Runtime::new() {
@@ -191,6 +206,7 @@ fn run_raft(ip: String, port: String, transmitter: Sender<bool>, receiver: Recei
     });
 }
 
+/// Creates a new Raft instance
 async fn new_raft_instance(
     ip: String,
     port: String,
@@ -231,6 +247,7 @@ async fn new_raft_instance(
 
 // MARK: Node Role
 
+/// Listens for changes in the node role from Raft
 fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
     thread::spawn(move || loop {
         match receiver.recv() {
@@ -241,8 +258,8 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                     NodeType::Shard
                 };
                 match change_role(role.to_owned(), transmitter.clone()) {
-                    Ok(_) => {
-                        println!("Role changing finished successfully");
+                    Ok(msg) => {
+                        println!("{color_bright_green}{msg}{style_reset}");
                     }
                     Err(_) => {
                         println!("Error could not change role to {:?}", role);
@@ -250,53 +267,40 @@ fn listen_raft_receiver(receiver: Receiver<bool>, transmitter: Sender<bool>) {
                 }
             }
             Err(_) => {
-                // println!("Error receiving from raft transmitter: {:?}", e);
+                // Do nothing
             }
         }
     });
 }
 
-fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Error> {
-    println!("Changing role to {:?}", new_role);
-
+/// Changes the node role if needed.
+fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<String, Error> {
     if new_role == NodeType::Client {
-        println!("NodeRole cannot be changed to Client, it is not a valid role");
+        eprintln!("NodeRole cannot be changed to Client, it is not a valid role");
         return Err(Error);
     };
 
-    println!("Trying to get node instance");
     let node_instance = get_node_instance();
-    println!("AFTER get node instance");
     let current_instance = &mut node_instance.instance;
 
-    println!("AFTER current instance");
-
     if node_instance.node_type == new_role {
-        println!("NodeRole is already {:?}", new_role);
         confirm_role_change(transmitter);
-        return Ok(());
+        return Ok("".to_string());
     }
-
-    println!("node type changes");
 
     let ip = node_instance.ip.clone();
     let port = node_instance.port.clone();
 
-    println!("ip: {}, port: {}", ip, port);
-
     // Stop current instance
     match current_instance.as_mut() {
         Some(instance) => {
-            println!("Stopping current instance");
             instance.stop();
         }
         None => {
-            println!("Node instance not initialized");
+            eprintln!("Node instance not initialized");
             return Err(Error);
         }
     }
-
-    println!("AFTER STOPPING current instance");
 
     match new_role {
         NodeType::Router => {
@@ -306,22 +310,23 @@ fn change_role(new_role: NodeType, transmitter: Sender<bool>) -> Result<(), Erro
             init_shard(&ip, &port);
         }
         _ => {
-            println!("NodeRole can only be changed to Router or Shard");
+            eprintln!("NodeRole can only be changed to Router or Shard");
             return Err(Error);
         }
     }
 
-    println!("AFTER CHANGING current instance");
     confirm_role_change(transmitter);
-    Ok(())
+    Ok(format!("Role changing finished successfully. Node is now {new_role:?}").to_string())
 }
 
+/// Confirms the role change to Raft
 fn confirm_role_change(transmitter: Sender<bool>) {
     transmitter
         .send(true)
         .expect("Error sending true to raft transmitter");
 }
 
+/// Initializes a new node instance based on the node type
 fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
     // Initialize node based on node type
     match node_type {
@@ -331,9 +336,8 @@ fn new_node_instance(node_type: NodeType, ip: &str, port: &str) {
     }
 }
 
+/// Initializes a new router
 fn init_router(ip: &str, port: &str) {
-    // sleep for 5 seconds to allow the stream to be ready to read
-    //thread::sleep(std::time::Duration::from_secs(5));
 
     let router = match Router::new(ip, port) {
         Some(router) => router,
@@ -356,14 +360,11 @@ fn init_router(ip: &str, port: &str) {
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
         Router::wait_for_incoming_connections(&shared_router, ip_clone, port_clone);
-        println!("Router comes back from wait_for_incoming_connections");
     });
-
-    println!("Router node initializes");
 }
 
+/// Initializes a new shard
 fn init_shard(ip: &str, port: &str) {
-    println!("Sharding node initializing");
     let shard = Shard::new(ip, port);
 
     unsafe {
@@ -380,14 +381,11 @@ fn init_shard(ip: &str, port: &str) {
     let port_clone = port.to_string();
     let _handle = thread::spawn(move || {
         Shard::accept_connections(shared_shard, ip_clone, port_clone);
-        println!("Shard comes back from accept_connections");
     });
-
-    println!("Sharding node initializes");
 }
 
+/// Initializes a new client
 fn init_client(ip: &str, port: &str) {
-    println!("Client node initializing");
     unsafe {
         NODE_INSTANCE = Some(NodeInstance::new(
             Box::new(Client::new(ip, port)),
@@ -396,5 +394,4 @@ fn init_client(ip: &str, port: &str) {
             NodeType::Client,
         ));
     }
-    println!("Client node initializes");
 }

@@ -1,5 +1,4 @@
 use indexmap::IndexMap;
-use inline_colorization::*;
 use std::{
     cmp::Ordering,
     collections::BinaryHeap,
@@ -8,6 +7,7 @@ use std::{
 
 use super::tables_id_info::TablesIdInfo;
 
+/// Struct that manages the shards' memory and max ids in each table.
 #[derive(Debug, Clone)]
 pub(crate) struct ShardManager {
     shards: Arc<Mutex<BinaryHeap<ShardManagerObject>>>,
@@ -15,6 +15,7 @@ pub(crate) struct ShardManager {
 }
 
 impl ShardManager {
+    /// Creates a new ShardManager.
     pub fn new() -> Self {
         ShardManager {
             shards: Arc::new(Mutex::new(BinaryHeap::new())),
@@ -22,48 +23,33 @@ impl ShardManager {
         }
     }
 
+    /// Adds a shard to the heap.
     pub fn add_shard(&mut self, value: f64, shard_id: String) {
         let object = ShardManagerObject {
             key: value,
             value: shard_id,
         };
-        println!("Adding shard: {:?}", object);
         let mut shards = match self.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                eprintln!("Failed to lock shards");
                 return;
             }
         };
         shards.push(object);
     }
 
+    /// Returns the top shard in the heap.
     pub fn peek(&self) -> Option<String> {
-        println!("Peeking shards: {:?}", self.shards);
         let shards = match self.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                eprintln!("Failed to lock shards");
                 return None;
             }
         };
 
-        match shards.peek() {
-            Some(object) => Some(object.value.clone()),
-            None => None,
-        }
-    }
-
-    pub fn count(&self) -> usize {
-        let shards = match self.shards.lock() {
-            Ok(shards) => shards,
-            Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
-                return 0;
-            }
-        };
-
-        shards.len()
+        shards.peek().map(|object| object.value.clone())
     }
 
     /// Updates the memory of a shard and reorders the shards based on the new memory.
@@ -71,25 +57,17 @@ impl ShardManager {
     /// If the memory is lower than the current top shard, it will be placed in the correct position in the heap.
     /// If the memory is zero, the shard will be at the base of the heap until it is updated once again.
     pub fn update_shard_memory(&mut self, memory: f64, shard_id: String) {
-        println!(
-            "{color_bright_green}Updating shard memory: {} to {}{style_reset}",
-            shard_id, memory
-        );
-
         self.delete(shard_id.clone());
         self.add_shard(memory, shard_id);
-
-        println!(
-            "{color_bright_green}Shard memory updated: {:?}{style_reset}",
-            self.shards
-        );
     }
 
+    /// Pops the top shard from the heap.
+    /// If the heap is empty, it will return None.
     fn pop(&mut self) -> Option<String> {
         let mut shards = match self.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                eprintln!("Failed to lock shards");
                 return None;
             }
         };
@@ -119,7 +97,7 @@ impl ShardManager {
         let mut shards = match self.shards.lock() {
             Ok(shards) => shards,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shards{style_reset}");
+                eprintln!("Failed to lock shards");
                 return;
             }
         };
@@ -136,11 +114,13 @@ impl ShardManager {
         *shards = new_shards;
     }
 
+    /// Saves the max ids for a shard.
+    /// This function is called when the router receives a message from a shard with the max ids for each table.
     pub fn save_max_ids_for_shard(&mut self, shard_id: String, tables_id_info: TablesIdInfo) {
         let shard_max_ids = match self.shard_max_ids.lock() {
             Ok(shard_max_ids) => shard_max_ids,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shard_max_ids{style_reset}");
+                eprintln!("Failed to lock shard_max_ids");
                 return;
             }
         };
@@ -148,11 +128,12 @@ impl ShardManager {
         shard_max_ids.insert(shard_id, tables_id_info);
     }
 
+    /// Returns the names of the tables existing in all shards.
     pub fn get_table_names_for_all(&self) -> Vec<String> {
         let shard_max_ids = match self.shard_max_ids.lock() {
             Ok(shard_max_ids) => shard_max_ids,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shard_max_ids{style_reset}");
+                eprintln!("Failed to lock shard_max_ids");
                 return Vec::new();
             }
         };
@@ -167,22 +148,18 @@ impl ShardManager {
         table_names
     }
 
+    /// Returns the max ids for a shard and table.
     pub fn get_max_ids_for_shard_table(&self, shard_id: &str, table: &str) -> Option<i64> {
         let shard_max_ids = match self.shard_max_ids.lock() {
             Ok(shard_max_ids) => shard_max_ids,
             Err(_) => {
-                println!("{color_bright_red}Failed to lock shard_max_ids{style_reset}");
+                eprintln!("Failed to lock shard_max_ids");
                 return None;
             }
         };
 
-        println!("shard_max_ids: {:?}", shard_max_ids);
-        println!("shard_id: {:?}, table: {:?}", shard_id, table);
         match shard_max_ids.get(shard_id) {
-            Some(tables_id_info) => match tables_id_info.get(table) {
-                Some(max_id) => Some(*max_id),
-                None => None,
-            },
+            Some(tables_id_info) => tables_id_info.get(table).copied(),
             None => None,
         }
     }
@@ -194,6 +171,7 @@ struct ShardManagerObject {
     value: String,
 }
 
+/// Implementing Ord for ShardManagerObject
 impl Ord for ShardManagerObject {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.partial_cmp(other) {
@@ -203,18 +181,21 @@ impl Ord for ShardManagerObject {
     }
 }
 
+/// Implementing PartialOrd for ShardManagerObject
 impl PartialOrd for ShardManagerObject {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.key.partial_cmp(&other.key)
     }
 }
 
+/// Implementing PartialEq for ShardManagerObject
 impl PartialEq for ShardManagerObject {
     fn eq(&self, other: &Self) -> bool {
         self.key == other.key
     }
 }
 
+/// Implementing Eq for ShardManagerObject
 impl Eq for ShardManagerObject {}
 
 #[cfg(test)]

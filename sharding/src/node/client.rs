@@ -25,6 +25,7 @@ pub struct Client {
     port: String,
 }
 
+/// Implementation of Client
 impl Client {
     /// Creates a new Client node with the given port
     pub fn new(ip: &str, port: &str) -> Self {
@@ -51,6 +52,7 @@ impl Client {
         }
     }
 
+    /// Tries to get the router info from the other nodes. If found, it connects to the router and returns the TcpStream.
     pub fn get_router_info(config: NodesConfig) -> Option<TcpStream> {
         let mut candidate_ip;
         let mut candidate_port;
@@ -151,6 +153,7 @@ impl Client {
         }
     }
 
+    /// Handles the router id message and returns the TcpStream if the router is found.
     fn handle_router_id_message(response_message: message::Message) -> Option<TcpStream> {
         if let Some(node_info) = response_message.get_data().node_info {
             let node_ip = node_info.ip.clone();
@@ -168,7 +171,7 @@ impl Client {
                     println!(
                         "{color_bright_green}Connected to router stream {}:{}{style_reset}",
                         node_ip,
-                        connections_port.to_string()
+                        connections_port
                     );
                     return Some(router_stream);
                 }
@@ -178,8 +181,9 @@ impl Client {
         None
     }
 
+    /// Handles the received message from a connection.
     fn handle_received_message(buffer: &mut [u8]) {
-        let message_string = String::from_utf8_lossy(&buffer);
+        let message_string = String::from_utf8_lossy(buffer);
         let response_message = match message::Message::from_string(&message_string) {
             Ok(message) => message,
             Err(_) => {
@@ -199,18 +203,22 @@ impl Client {
     }
 }
 
+/// Implementation of Node for Client
 impl NodeRole for Client {
     fn backend(&self) -> Arc<Mutex<postgres::Client>> {
         panic!("Client node does not have a backend");
     }
 
+    /// Sends query to the router and returns the response.
     fn send_query(&mut self, query: &str) -> Option<String> {
         if query == "whoami;" {
-            println!("> I am Client: {}:{}\n", self.ip, self.port);
+            println!(
+                "{color_bright_green}> I am Client: {}:{}{style_reset}\n",
+                self.ip, self.port
+            );
             return None;
         }
 
-        println!("Sending query from client");
         let message =
             message::Message::new_query(Some(self.client_info.clone()), query.to_string());
 
@@ -219,7 +227,7 @@ impl NodeRole for Client {
             query
         );
 
-        // Intentar obtener el stream actual
+        // Get current stream
         let mut stream = match self.router_postgres_client.stream.lock() {
             Ok(stream) => stream,
             Err(e) => {
@@ -228,9 +236,7 @@ impl NodeRole for Client {
             }
         };
 
-        println!("{color_bright_blue}Stream locked{style_reset}");
-
-        // Intentar enviar el mensaje y reconectar si falla
+        // Try to send the message. If it fails, reconnect to a new router
         if let Err(e) = stream.write_all(message.to_string().as_bytes()) {
             eprintln!(
                 "{color_bright_red}Failed to send the query: {:?}{style_reset}",
@@ -238,7 +244,7 @@ impl NodeRole for Client {
             );
             eprintln!("Reconnecting to new router...");
             drop(stream);
-            // Obtener un nuevo router y actualizar el canal
+            // Get a new router and update the stream
             let new_stream = match Self::get_router_info(get_nodes_config()) {
                 Some(new_stream) => new_stream,
                 None => {
@@ -255,10 +261,10 @@ impl NodeRole for Client {
 
         println!("{color_bright_blue}Query sent to router{style_reset}");
 
-        // Preparar el buffer de respuesta
+        // Prepare the response buffer
         let mut buffer: [u8; MAX_PAGE_SIZE] = [0; MAX_PAGE_SIZE];
 
-        // Intentar leer la respuesta y reconectar si falla
+        // Try to read the response and reconnect if it fails
         match stream.read(&mut buffer) {
             Ok(chars) if chars > 0 => {
                 Client::handle_received_message(&mut buffer);
@@ -269,7 +275,7 @@ impl NodeRole for Client {
                 eprintln!("Reconnecting to new router...");
                 drop(stream);
 
-                // Obtener un nuevo router y actualizar el canal
+                // Get a new router and update the stream
                 if let Some(new_stream) = Self::get_router_info(get_nodes_config()) {
                     self.router_postgres_client = Channel {
                         stream: Arc::new(Mutex::new(new_stream)),

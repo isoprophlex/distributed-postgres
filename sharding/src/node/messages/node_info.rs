@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use crate::utils::node_config::get_nodes_config;
 
+/// Struct that represents the information of a node: ip, port and name.
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub ip: String,
@@ -9,9 +10,11 @@ pub struct NodeInfo {
     pub name: String,
 }
 
+/// Implementation of NodeInfo FromStr
 impl FromStr for NodeInfo {
     type Err = &'static str;
 
+    /// Parses a string to a NodeInfo struct.
     fn from_str(input: &str) -> Result<NodeInfo, &'static str> {
         // split the input string by ':'
         let mut parts = input.split(':');
@@ -35,18 +38,21 @@ impl FromStr for NodeInfo {
     }
 }
 
+/// Implementation of PartialEq for NodeInfo
 impl PartialEq for NodeInfo {
     fn eq(&self, other: &Self) -> bool {
         self.ip == other.ip && self.port == other.port
     }
 }
 
+/// Implementation of Display for NodeInfo
 impl std::fmt::Display for NodeInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}:{}", self.ip, self.port)
     }
 }
 
+/// Function to find the name of a node given its ip and port.
 pub fn find_name_for_node(ip: String, port: String) -> Option<String> {
     let config = get_nodes_config();
     for node in config.nodes {
